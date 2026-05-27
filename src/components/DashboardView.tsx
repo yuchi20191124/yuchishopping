@@ -221,7 +221,7 @@ export default function DashboardView({
               onClick={() => onNavigate('customer')}
               className="text-[#3A72A0] hover:text-[#2a5a82] font-semibold text-xs flex items-center gap-1 cursor-pointer"
             >
-              全部 <ArrowRight className="w-3.5 h-3.5" />
+              全部 <ArrowRight className="w-3.5 h-3.5 text-[#3A72A0]" />
             </button>
           </div>
 
@@ -278,7 +278,7 @@ export default function DashboardView({
               onClick={() => onNavigate('shipment')}
               className="text-[#3A72A0] hover:text-[#2a5a82] font-semibold text-xs flex items-center gap-1 cursor-pointer"
             >
-              全部 <ArrowRight className="w-3.5 h-3.5" />
+              全部 <ArrowRight className="w-3.5 h-3.5 text-[#3A72A0]" />
             </button>
           </div>
 
