@@ -385,33 +385,12 @@ export default function App() {
         <div className="flex items-center gap-2">
           {/* Circular launcher badge */}
           <div className="w-9 h-9 border border-[#BEB8AE] bg-white rounded-lg flex items-center justify-center overflow-hidden">
-            <img src="/icon-192.png" alt="logo" className="w-full h-full object-cover" />
+            <img src="icon-192.png" alt="logo" className="w-full h-full object-cover" />
           </div>
           <div>
             <h1 className="font-serif font-black text-sm text-[#3A72A0] tracking-wide leading-none">yuchishopping</h1>
             <p className="text-[10px] text-gray-500 font-sans tracking-widest mt-1 uppercase">代購管理系統</p>
           </div>
-        </div>
-
-        {/* Quick controls shortcut triggers */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setModal({ type: 'co', data: null })}
-            className="flex items-center justify-center gap-1 px-3 h-10 bg-[#3A72A0] hover:bg-[#2c577a] active:scale-95 text-white text-xs font-bold rounded-xl cursor-pointer select-none transition-all shadow-xs"
-            id="global-add-co"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>＋客單</span>
-          </button>
-          
-          <button
-            onClick={() => setModal({ type: 'po', data: null })}
-            className="flex items-center justify-center gap-1 px-3 h-10 border border-[#3A72A0] text-[#3A72A0] bg-white hover:bg-gray-50 rounded-xl active:scale-95 text-xs font-bold select-none cursor-pointer transition-all"
-            id="global-add-po"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>＋採購</span>
-          </button>
         </div>
       </header>
 
@@ -487,7 +466,7 @@ export default function App() {
         {[
           { id: 'dashboard', label: '總覽摘要', icon: LayoutDashboard },
           { id: 'customer',  label: '客戶訂單', icon: User },
-          { id: 'purchase',  label: '預購採購', icon: ShoppingBag },
+          { id: 'purchase',  label: '採購單', icon: ShoppingBag },
           { id: 'shipment',  label: '包裹運送', icon: Truck },
           { id: 'products',  label: '商品規格', icon: FolderHeart },
           { id: 'packaging', label: '包耗材額', icon: Box }
