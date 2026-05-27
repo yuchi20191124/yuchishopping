@@ -11,25 +11,46 @@ service cloud.firestore {
     }
 
     match /of_chars/{id} {
-      allow read, write: if isValidId(id);
+      allow get: if isValidId(id);
+      allow list: if true;
+      allow create, update: if isValidId(id);
+      allow delete: if isValidId(id);
     }
     match /of_series/{id} {
-      allow read, write: if isValidId(id);
+      allow get: if isValidId(id);
+      allow list: if true;
+      allow create, update: if isValidId(id);
+      allow delete: if isValidId(id);
     }
     match /of_products/{id} {
-      allow read, write: if isValidId(id);
+      allow get: if isValidId(id);
+      allow list: if true;
+      allow create, update: if isValidId(id);
+      allow delete: if isValidId(id);
     }
     match /of_cos/{id} {
-      allow read, write: if isValidId(id);
+      allow get: if isValidId(id);
+      allow list: if true;
+      allow create, update: if isValidId(id);
+      allow delete: if isValidId(id);
     }
     match /of_pos/{id} {
-      allow read, write: if isValidId(id);
+      allow get: if isValidId(id);
+      allow list: if true;
+      allow create, update: if isValidId(id);
+      allow delete: if isValidId(id);
     }
     match /of_ships/{id} {
-      allow read, write: if isValidId(id);
+      allow get: if isValidId(id);
+      allow list: if true;
+      allow create, update: if isValidId(id);
+      allow delete: if isValidId(id);
     }
     match /of_pkgs/{id} {
-      allow read, write: if isValidId(id);
+      allow get: if isValidId(id);
+      allow list: if true;
+      allow create, update: if isValidId(id);
+      allow delete: if isValidId(id);
     }
   }
 }
