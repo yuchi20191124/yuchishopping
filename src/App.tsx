@@ -12,7 +12,8 @@ import {
   Plus, 
   FolderHeart, 
   Box, 
-  DollarSign 
+  DollarSign,
+  RefreshCw 
 } from 'lucide-react';
 import { 
   Character, 
@@ -48,17 +49,105 @@ export default function App() {
   const [view, setView] = useState<string>('dashboard');
   const [modal, setModal] = useState<{ type: 'co' | 'po' | 'ship'; data: any | null } | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await loadAllData();
+    } catch (e) {
+      console.error("Manual refresh failed:", e);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // Load everything from unified storage service
   const loadAllData = async () => {
     try {
-      const pChars = await StorageService.getChars();
-      const pSeries = await StorageService.getSeries();
-      const pProducts = await StorageService.getProducts();
-      const pCos = await StorageService.getClientOrders();
-      const pPos = await StorageService.getPreOrders();
-      const pShips = await StorageService.getShipments();
-      const pPkgs = await StorageService.getPackagingCosts();
+      // Robust loading of characters
+      let pChars: Character[] = [];
+      try {
+        pChars = await StorageService.getChars();
+      } catch (e) {
+        console.warn("Could not load chars from Cloud, trying local:", e);
+        try {
+          const localVal = localStorage.getItem("of_chars");
+          pChars = localVal ? JSON.parse(localVal) : [];
+        } catch (_) { pChars = []; }
+      }
+
+      // Robust loading of series
+      let pSeries: Series[] = [];
+      try {
+        pSeries = await StorageService.getSeries();
+      } catch (e) {
+        console.warn("Could not load series from Cloud, trying local:", e);
+        try {
+          const localVal = localStorage.getItem("of_series");
+          pSeries = localVal ? JSON.parse(localVal) : [];
+        } catch (_) { pSeries = []; }
+      }
+
+      // Robust loading of products
+      let pProducts: Product[] = [];
+      try {
+        pProducts = await StorageService.getProducts();
+      } catch (e) {
+        console.warn("Could not load products from Cloud, trying local:", e);
+        try {
+          const localVal = localStorage.getItem("of_products");
+          pProducts = localVal ? JSON.parse(localVal) : [];
+        } catch (_) { pProducts = []; }
+      }
+
+      // Robust loading of client orders
+      let pCos: ClientOrder[] = [];
+      try {
+        pCos = await StorageService.getClientOrders();
+      } catch (e) {
+        console.warn("Could not load client orders from Cloud, trying local:", e);
+        try {
+          const localVal = localStorage.getItem("of_cos");
+          pCos = localVal ? JSON.parse(localVal) : [];
+        } catch (_) { pCos = []; }
+      }
+
+      // Robust loading of preorders (purchase)
+      let pPos: PreOrder[] = [];
+      try {
+        pPos = await StorageService.getPreOrders();
+      } catch (e) {
+        console.warn("Could not load preorders from Cloud, trying local:", e);
+        try {
+          const localVal = localStorage.getItem("of_pos");
+          pPos = localVal ? JSON.parse(localVal) : [];
+        } catch (_) { pPos = []; }
+      }
+
+      // Robust loading of shipments
+      let pShips: Shipment[] = [];
+      try {
+        pShips = await StorageService.getShipments();
+      } catch (e) {
+        console.warn("Could not load shipments from Cloud, trying local:", e);
+        try {
+          const localVal = localStorage.getItem("of_ships");
+          pShips = localVal ? JSON.parse(localVal) : [];
+        } catch (_) { pShips = []; }
+      }
+
+      // Robust loading of packaging costs
+      let pPkgs: PackagingCost[] = [];
+      try {
+        pPkgs = await StorageService.getPackagingCosts();
+      } catch (e) {
+        console.warn("Could not load packaging costs from Cloud, trying local:", e);
+        try {
+          const localVal = localStorage.getItem("of_pkgs");
+          pPkgs = localVal ? JSON.parse(localVal) : [];
+        } catch (_) { pPkgs = []; }
+      }
 
       setChars(pChars);
       setSeries(pSeries);
@@ -392,6 +481,18 @@ export default function App() {
             <p className="text-[10px] text-gray-500 font-sans tracking-widest mt-1 uppercase">代購管理系統</p>
           </div>
         </div>
+
+        {/* Sync/Refresh Action Button */}
+        <button
+          onClick={handleManualRefresh}
+          disabled={isRefreshing}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#3A72A0] bg-white hover:bg-gray-50 active:scale-95 disabled:opacity-60 border border-[#BEB8AE] rounded-xl transition-all cursor-pointer select-none"
+          title="手動重新整理網頁/雲端資料"
+          id="btn-sync-refresh"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-amber-600' : ''}`} />
+          <span>{isRefreshing ? '同步中...' : '同步更新'}</span>
+        </button>
       </header>
 
       {/* Main viewport panels */}
@@ -526,3 +627,4 @@ export default function App() {
     </div>
   );
 }
+
