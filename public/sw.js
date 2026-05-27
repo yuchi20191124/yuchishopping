@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yuchishopping-cache-v1';
+const CACHE_NAME = 'yuchishopping-cache-v2';
 const ASSETS_TO_CACHE = [
   './',
   'index.html',
@@ -32,33 +32,35 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Only cache GET requests going to local origin to avoid CORS issues
+  // Only handle GET requests going to local origin
   if (event.request.method !== 'GET' || !event.request.url.startsWith(self.location.origin)) {
     return;
   }
 
+  // Network-First strategy: Try the network first, fall back to cache if offline
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-
-      return fetch(event.request).then((response) => {
-        // Check if we received a valid response
-        if (!response || response.status !== 200 || response.type !== 'basic') {
-          return response;
+    fetch(event.request)
+      .then((response) => {
+        // If valid response, update cache and return
+        if (response && response.status === 200 && response.type === 'basic') {
+          const responseToCache = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          }).catch(() => {});
         }
-
-        const responseToCache = response.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, responseToCache);
-        }).catch(() => {});
-
         return response;
-      }).catch(() => {
-        // Fallback for offline conditions
-        return caches.match('/index.html');
-      });
-    })
+      })
+      .catch(() => {
+        // Offline: attempt to retrieve from cache
+        return caches.match(event.request).then((cachedResponse) => {
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+          // Fallback to offline index.html for navigation actions
+          if (event.request.mode === 'navigate') {
+            return caches.match('index.html') || caches.match('./');
+          }
+        });
+      })
   );
 });
