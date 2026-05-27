@@ -22,7 +22,8 @@ import {
   ClientOrder, 
   PreOrder, 
   Shipment, 
-  PackagingCost 
+  PackagingCost,
+  CoItem 
 } from './types';
 import { StorageService } from './lib/storage';
 
@@ -146,6 +147,76 @@ export default function App() {
 
   /* ──────────────── CUSTOM BUSINESS PROCESSORS ──────────────── */
 
+  // Merge multiple orders of the same customer IG
+  const handleMergeOrders = async (customerIG: string) => {
+    if (!customerIG) return;
+    const targets = cos.filter(c => (c.customerIG || '').trim().toLowerCase() === customerIG.trim().toLowerCase());
+    if (targets.length <= 1) return;
+
+    if (!window.confirm(`確定要為 @${customerIG} 進行倂單（合併訂單）嗎？\n這會將 ${targets.length} 筆客戶訂單合併為 1 筆，並自動重新關聯已有的海外採購預購單。`)) {
+      return;
+    }
+
+    // Sort to make the earliest order the master target
+    targets.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    const master = targets[0];
+    const duplicates = targets.slice(1);
+
+    // Merge items
+    const mergedItems: CoItem[] = [...master.items];
+    const duplicateIds = duplicates.map(d => d.id);
+
+    duplicates.forEach(d => {
+      // Keep their original item IDs intact so preorder linkages remain correct
+      mergedItems.push(...d.items);
+    });
+
+    // Merge notes
+    const allNotes = [master.notes, ...duplicates.map(d => d.notes)].filter(Boolean).join('; ');
+
+    // Merge clientOrdered state: true if any is true
+    const mergedClientOrdered = master.clientOrdered || duplicates.some(d => d.clientOrdered);
+
+    const updatedMaster: ClientOrder = {
+      ...master,
+      items: mergedItems,
+      notes: allNotes,
+      clientOrdered: mergedClientOrdered
+    };
+
+    // Update all PreOrders that point to any item in duplicates
+    const updatedPos = pos.map(po => {
+      const needsUpdate = po.linkedItems?.some(li => duplicateIds.includes(li.coId));
+      if (!needsUpdate) return po;
+
+      return {
+        ...po,
+        linkedItems: po.linkedItems.map(li => {
+          if (duplicateIds.includes(li.coId)) {
+            return { ...li, coId: master.id }; // point old duplicate coId to master.id
+          }
+          return li;
+        })
+      };
+    });
+
+    const changedPos = updatedPos.filter((item, idx) => item !== pos[idx]);
+
+    // Commit to Firestore using optimized read-free calls
+    await Promise.all([
+      StorageService.saveClientOrder(updatedMaster),
+      ...duplicates.map(d => StorageService.deleteClientOrder(d.id)),
+      ...changedPos.map(p => StorageService.savePreOrder(p))
+    ]);
+
+    // Instantly modify state in memory
+    setCos(prev => {
+      const filtered = prev.filter(c => !duplicateIds.includes(c.id));
+      return filtered.map(c => c.id === master.id ? updatedMaster : c);
+    });
+    setPos(updatedPos);
+  };
+
   // A. CUSTOMER ORDERS LOG
   const saveCo = async (co: ClientOrder) => {
     const finalId = co.id || 'co_' + Math.random().toString(36).slice(2, 10);
@@ -156,8 +227,13 @@ export default function App() {
     };
 
     await StorageService.saveClientOrder(finalRecord);
+    
+    // Direct in-memory state update for speed
+    setCos(prev => prev.some(c => c.id === finalId)
+      ? prev.map(c => c.id === finalId ? finalRecord : c)
+      : [...prev, finalRecord]
+    );
     setModal(null);
-    await loadAllData();
   };
 
   const deleteCo = async (id: string) => {
@@ -169,7 +245,6 @@ export default function App() {
       linkedItems: (p.linkedItems || []).filter(li => li.coId !== id)
     }));
 
-    // Detect which ones actually changed to avoid redundant writes
     const changedPos = updatedPos.filter((item, idx) => item !== pos[idx]);
 
     await Promise.all([
@@ -177,22 +252,27 @@ export default function App() {
       StorageService.deleteClientOrder(id)
     ]);
     
-    await loadAllData();
+    // Direct state removal
+    setCos(prev => prev.filter(c => c.id !== id));
+    setPos(updatedPos);
   };
 
-  // Toggle cliente order status
+  // Toggle client order status
   const handleToggleOrdered = async (co: ClientOrder) => {
     const updated = { ...co, clientOrdered: !co.clientOrdered };
     await StorageService.saveClientOrder(updated);
-    await loadAllData();
+    
+    setCos(prev => prev.map(c => c.id === co.id ? updated : c));
   };
 
   const handleMarkItemSent = async (coId: string, itemId: string) => {
     const co = cos.find(c => c.id === coId);
     if (!co) return;
     const updatedItems = co.items.map(i => i.id === itemId ? { ...i, status: 'sent_to_client' as const } : i);
-    await StorageService.saveClientOrder({ ...co, items: updatedItems });
-    await loadAllData();
+    const updated = { ...co, items: updatedItems };
+    
+    await StorageService.saveClientOrder(updated);
+    setCos(prev => prev.map(c => c.id === coId ? updated : c));
   };
 
   // B. PRE-ORDERS / MERCHANDISE PURCHASES BINDER
@@ -228,7 +308,6 @@ export default function App() {
       } : c);
     });
 
-    // Save and commit ONLY client orders that actually changed
     const changedCos = updatedCos.filter((item, idx) => item !== cos[idx]);
 
     await Promise.all([
@@ -236,8 +315,13 @@ export default function App() {
       StorageService.savePreOrder(finalRecord)
     ]);
 
+    setCos(updatedCos);
+    setPos(prev => prev.some(p => p.id === finalId)
+      ? prev.map(p => p.id === finalId ? finalRecord : p)
+      : [...prev, finalRecord]
+    );
+
     setModal(null);
-    await loadAllData();
   };
 
   const deletePo = async (id: string) => {
@@ -247,7 +331,6 @@ export default function App() {
     const updatedCosMap = new Map<string, ClientOrder>();
 
     if (poDoc) {
-      // Restore linked items status and clear poId references in consolidated Map
       const linked = poDoc.linkedItems || [];
       for (const li of linked) {
         const existingCo = updatedCosMap.get(li.coId) || cos.find(c => c.id === li.coId);
@@ -258,7 +341,6 @@ export default function App() {
       }
     }
 
-    // Clean current shipment bounds
     const updatedShips = ships.map(s => ({
       ...s,
       poIds: (s.poIds || []).filter(pid => pid !== id)
@@ -271,7 +353,9 @@ export default function App() {
       StorageService.deletePreOrder(id)
     ]);
 
-    await loadAllData();
+    setCos(prev => prev.map(c => updatedCosMap.has(c.id) ? updatedCosMap.get(c.id)! : c));
+    setShips(updatedShips);
+    setPos(prev => prev.filter(p => p.id !== id));
   };
 
   // C. FREIGHT INTERNATIONAL SHIPMENT TRACKING
@@ -300,34 +384,28 @@ export default function App() {
           ...c,
           items: c.items.map(item => {
             if (item.id !== li.itemId) return item;
-            if (item.status === 'sent_to_client') return item; // retain finished items
+            if (item.status === 'sent_to_client') return item;
 
-            // If removed from shipment bundle, role-back state to ordered
             if (!inNewCarrier) {
               return { ...item, status: 'ordered' as const };
             }
-            
-            // Map stage from shipment stage
             return { ...item, status: ship.stage };
           })
         } : c);
       });
     });
 
-    // Automatically flag preorder stages to "arrived" when cargo is arrived
     let updatedPos = [...pos];
     if (ship.stage === 'arrived') {
       ship.poIds.forEach(poId => {
         updatedPos = updatedPos.map(p => p.id === poId && p.stage !== 'done' ? { ...p, stage: 'arrived' as const } : p);
       });
     } else {
-      // Revert if set back to transit
       ship.poIds.forEach(poId => {
         updatedPos = updatedPos.map(p => p.id === poId && p.stage === 'arrived' ? { ...p, stage: 'ordered' as const } : p);
       });
     }
 
-    // Safe updates - filter only those truly changed to optimize DB writes
     const changedCos = updatedCos.filter((item, idx) => item !== cos[idx]);
     const changedPos = updatedPos.filter((item, idx) => item !== pos[idx]);
 
@@ -337,8 +415,14 @@ export default function App() {
       StorageService.saveShipment(finalRecord)
     ]);
 
+    setCos(updatedCos);
+    setPos(updatedPos);
+    setShips(prev => prev.some(s => s.id === finalId)
+      ? prev.map(s => s.id === finalId ? finalRecord : s)
+      : [...prev, finalRecord]
+    );
+
     setModal(null);
-    await loadAllData();
   };
 
   const updateShipStageDirectly = async (shipId: string, stage: 'packed' | 'shipped_from' | 'in_transit' | 'arrived') => {
@@ -380,7 +464,8 @@ export default function App() {
       StorageService.deleteShipment(id)
     ]);
     
-    await loadAllData();
+    setCos(prev => prev.map(c => updatedCosMap.has(c.id) ? updatedCosMap.get(c.id)! : c));
+    setShips(prev => prev.filter(s => s.id !== id));
   };
 
   // D. AUXILIARIES WRAP PACKAGING BILLS
@@ -388,20 +473,16 @@ export default function App() {
     setPkgs(newPkgs);
     const currentLocal = await StorageService.getPackagingCosts();
     
-    // Find what changed/is new versus what is deleted
     const changedOrNew = newPkgs.filter(p => {
       const existing = currentLocal.find(o => o.id === p.id);
       return !existing || JSON.stringify(existing) !== JSON.stringify(p);
     });
 
     const savePromises = changedOrNew.map(p => StorageService.savePackagingCost(p));
-    
-    // Detect deletes
     const deletes = currentLocal.filter(l => !newPkgs.some(p => p.id === l.id));
     const deletePromises = deletes.map(d => StorageService.deletePackagingCost(d.id));
 
     await Promise.all([...savePromises, ...deletePromises]);
-    await loadAllData();
   };
 
   const handleSaveChars = async (newChars: Character[]) => {
@@ -418,7 +499,6 @@ export default function App() {
     const deletePromises = deletes.map(d => StorageService.deleteChar(d.id));
 
     await Promise.all([...savePromises, ...deletePromises]);
-    await loadAllData();
   };
 
   const handleSaveSeries = async (newSeries: Series[]) => {
@@ -435,7 +515,6 @@ export default function App() {
     const deletePromises = deletes.map(d => StorageService.deleteSeries(d.id));
 
     await Promise.all([...savePromises, ...deletePromises]);
-    await loadAllData();
   };
 
   const handleSaveProducts = async (newProducts: Product[]) => {
@@ -452,7 +531,6 @@ export default function App() {
     const deletePromises = deletes.map(d => StorageService.deleteProduct(d.id));
 
     await Promise.all([...savePromises, ...deletePromises]);
-    await loadAllData();
   };
 
   if (loading) {
@@ -514,6 +592,7 @@ export default function App() {
             onEdit={(c) => setModal({ type: 'co', data: c })}
             onDelete={deleteCo}
             onNew={() => setModal({ type: 'co', data: null })}
+            onMergeOrders={handleMergeOrders}
           />
         )}
 
