@@ -185,7 +185,7 @@ export const StorageService = {
   },
 
   async saveChar(item: Character): Promise<void> {
-    const current = await this.getChars();
+    const current = getLocal("of_chars", []);
     const updated = current.some(c => c.id === item.id)
       ? current.map(c => c.id === item.id ? item : c)
       : [...current, item];
@@ -202,7 +202,7 @@ export const StorageService = {
   },
 
   async deleteChar(id: string): Promise<void> {
-    const current = await this.getChars();
+    const current = getLocal("of_chars", []);
     const updated = current.filter(c => c.id !== id);
     saveLocal("of_chars", updated);
 
@@ -236,7 +236,7 @@ export const StorageService = {
   },
 
   async saveSeries(item: Series): Promise<void> {
-    const current = await this.getSeries();
+    const current = getLocal("of_series", []);
     const updated = current.some(s => s.id === item.id)
       ? current.map(s => s.id === item.id ? item : s)
       : [...current, item];
@@ -253,7 +253,7 @@ export const StorageService = {
   },
 
   async deleteSeries(id: string): Promise<void> {
-    const current = await this.getSeries();
+    const current = getLocal("of_series", []);
     const updated = current.filter(s => s.id !== id);
     saveLocal("of_series", updated);
 
@@ -287,7 +287,7 @@ export const StorageService = {
   },
 
   async saveProduct(item: Product): Promise<void> {
-    const current = await this.getProducts();
+    const current = getLocal("of_products", []);
     const updated = current.some(p => p.id === item.id)
       ? current.map(p => p.id === item.id ? item : p)
       : [...current, item];
@@ -304,7 +304,7 @@ export const StorageService = {
   },
 
   async deleteProduct(id: string): Promise<void> {
-    const current = await this.getProducts();
+    const current = getLocal("of_products", []);
     const updated = current.filter(p => p.id !== id);
     saveLocal("of_products", updated);
 
@@ -338,7 +338,7 @@ export const StorageService = {
   },
 
   async saveClientOrder(item: ClientOrder): Promise<void> {
-    const current = await this.getClientOrders();
+    const current = getLocal("of_cos", []);
     const updated = current.some(c => c.id === item.id)
       ? current.map(c => c.id === item.id ? item : c)
       : [...current, item];
@@ -355,7 +355,7 @@ export const StorageService = {
   },
 
   async deleteClientOrder(id: string): Promise<void> {
-    const current = await this.getClientOrders();
+    const current = getLocal("of_cos", []);
     const updated = current.filter(c => c.id !== id);
     saveLocal("of_cos", updated);
 
@@ -389,7 +389,7 @@ export const StorageService = {
   },
 
   async savePreOrder(item: PreOrder): Promise<void> {
-    const current = await this.getPreOrders();
+    const current = getLocal("of_pos", []);
     const updated = current.some(p => p.id === item.id)
       ? current.map(p => p.id === item.id ? item : p)
       : [...current, item];
@@ -406,7 +406,7 @@ export const StorageService = {
   },
 
   async deletePreOrder(id: string): Promise<void> {
-    const current = await this.getPreOrders();
+    const current = getLocal("of_pos", []);
     const updated = current.filter(p => p.id !== id);
     saveLocal("of_pos", updated);
 
@@ -440,7 +440,7 @@ export const StorageService = {
   },
 
   async saveShipment(item: Shipment): Promise<void> {
-    const current = await this.getShipments();
+    const current = getLocal("of_ships", []);
     const updated = current.some(s => s.id === item.id)
       ? current.map(s => s.id === item.id ? item : s)
       : [...current, item];
@@ -457,7 +457,7 @@ export const StorageService = {
   },
 
   async deleteShipment(id: string): Promise<void> {
-    const current = await this.getShipments();
+    const current = getLocal("of_ships", []);
     const updated = current.filter(s => s.id !== id);
     saveLocal("of_ships", updated);
 
@@ -491,7 +491,7 @@ export const StorageService = {
   },
 
   async savePackagingCost(item: PackagingCost): Promise<void> {
-    const current = await this.getPackagingCosts();
+    const current = getLocal("of_pkgs", []);
     const updated = current.some(p => p.id === item.id)
       ? current.map(p => p.id === item.id ? item : p)
       : [...current, item];
@@ -508,7 +508,7 @@ export const StorageService = {
   },
 
   async deletePackagingCost(id: string): Promise<void> {
-    const current = await this.getPackagingCosts();
+    const current = getLocal("of_pkgs", []);
     const updated = current.filter(p => p.id !== id);
     saveLocal("of_pkgs", updated);
 
