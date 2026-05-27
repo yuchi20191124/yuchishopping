@@ -1,0 +1,23 @@
+{
+  "short_name": "yuchishopping",
+  "name": "yuchishopping 代購管理",
+  "description": "yuchishopping 團隊專屬代購與國際集運物流管理系統",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "icon-192.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "./index.html",
+  "background_color": "#EDE8DE",
+  "theme_color": "#EDE8DE",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "scope": "./"
+}

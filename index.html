@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#EDE8DE" />
+    
+    <!-- iOS / PWA Standalone home screen capable definitions -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="yuchishopping" />
+    
+    <title>yuchishopping 代購管理系統</title>
+    
+    <!-- Link touch resources -->
+    <link rel="manifest" href="manifest.json" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
+    <script type="module" crossorigin src="./assets/index-Cm9WN7Z5.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DWCSjDJs.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    
+    <!-- Install and boot standard offline-support service worker -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('sw.js')
+            .then((reg) => {
+              console.log('ServiceWorker registered with scope: ', reg.scope);
+            })
+            .catch((err) => {
+              console.warn('ServiceWorker registration failed: ', err);
+            });
+        });
+      }
+    </script>
+  </body>
+</html>
