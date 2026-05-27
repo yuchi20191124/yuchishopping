@@ -1,6 +1,0 @@
-{
-  "name": "yuchishopping 代購管理系統",
-  "description": "yuchishopping 團隊專屬代購與國際集運物流管理系統，支持 PWA 離線支援與 Firebase 雲端同步",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
