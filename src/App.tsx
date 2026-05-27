@@ -65,89 +65,57 @@ export default function App() {
   // Load everything from unified storage service
   const loadAllData = async () => {
     try {
-      // Robust loading of characters
-      let pChars: Character[] = [];
-      try {
-        pChars = await StorageService.getChars();
-      } catch (e) {
-        console.warn("Could not load chars from Cloud, trying local:", e);
-        try {
-          const localVal = localStorage.getItem("of_chars");
-          pChars = localVal ? JSON.parse(localVal) : [];
-        } catch (_) { pChars = []; }
-      }
-
-      // Robust loading of series
-      let pSeries: Series[] = [];
-      try {
-        pSeries = await StorageService.getSeries();
-      } catch (e) {
-        console.warn("Could not load series from Cloud, trying local:", e);
-        try {
-          const localVal = localStorage.getItem("of_series");
-          pSeries = localVal ? JSON.parse(localVal) : [];
-        } catch (_) { pSeries = []; }
-      }
-
-      // Robust loading of products
-      let pProducts: Product[] = [];
-      try {
-        pProducts = await StorageService.getProducts();
-      } catch (e) {
-        console.warn("Could not load products from Cloud, trying local:", e);
-        try {
-          const localVal = localStorage.getItem("of_products");
-          pProducts = localVal ? JSON.parse(localVal) : [];
-        } catch (_) { pProducts = []; }
-      }
-
-      // Robust loading of client orders
-      let pCos: ClientOrder[] = [];
-      try {
-        pCos = await StorageService.getClientOrders();
-      } catch (e) {
-        console.warn("Could not load client orders from Cloud, trying local:", e);
-        try {
-          const localVal = localStorage.getItem("of_cos");
-          pCos = localVal ? JSON.parse(localVal) : [];
-        } catch (_) { pCos = []; }
-      }
-
-      // Robust loading of preorders (purchase)
-      let pPos: PreOrder[] = [];
-      try {
-        pPos = await StorageService.getPreOrders();
-      } catch (e) {
-        console.warn("Could not load preorders from Cloud, trying local:", e);
-        try {
-          const localVal = localStorage.getItem("of_pos");
-          pPos = localVal ? JSON.parse(localVal) : [];
-        } catch (_) { pPos = []; }
-      }
-
-      // Robust loading of shipments
-      let pShips: Shipment[] = [];
-      try {
-        pShips = await StorageService.getShipments();
-      } catch (e) {
-        console.warn("Could not load shipments from Cloud, trying local:", e);
-        try {
-          const localVal = localStorage.getItem("of_ships");
-          pShips = localVal ? JSON.parse(localVal) : [];
-        } catch (_) { pShips = []; }
-      }
-
-      // Robust loading of packaging costs
-      let pPkgs: PackagingCost[] = [];
-      try {
-        pPkgs = await StorageService.getPackagingCosts();
-      } catch (e) {
-        console.warn("Could not load packaging costs from Cloud, trying local:", e);
-        try {
-          const localVal = localStorage.getItem("of_pkgs");
-          pPkgs = localVal ? JSON.parse(localVal) : [];
-        } catch (_) { pPkgs = []; }
-      }
+      const [pChars, pSeries, pProducts, pCos, pPos, pShips, pPkgs] = await Promise.all([
+        StorageService.getChars().catch(e => {
+          console.warn("Could not load chars from Cloud, trying local:", e);
+          try {
+            const localVal = localStorage.getItem("of_chars");
+            return localVal ? JSON.parse(localVal) : [];
+          } catch (_) { return []; }
+        }),
+        StorageService.getSeries().catch(e => {
+          console.warn("Could not load series from Cloud, trying local:", e);
+          try {
+            const localVal = localStorage.getItem("of_series");
+            return localVal ? JSON.parse(localVal) : [];
+          } catch (_) { return []; }
+        }),
+        StorageService.getProducts().catch(e => {
+          console.warn("Could not load products from Cloud, trying local:", e);
+          try {
+            const localVal = localStorage.getItem("of_products");
+            return localVal ? JSON.parse(localVal) : [];
+          } catch (_) { return []; }
+        }),
+        StorageService.getClientOrders().catch(e => {
+          console.warn("Could not load client orders from Cloud, trying local:", e);
+          try {
+            const localVal = localStorage.getItem("of_cos");
+            return localVal ? JSON.parse(localVal) : [];
+          } catch (_) { return []; }
+        }),
+        StorageService.getPreOrders().catch(e => {
+          console.warn("Could not load preorders from Cloud, trying local:", e);
+          try {
+            const localVal = localStorage.getItem("of_pos");
+            return localVal ? JSON.parse(localVal) : [];
+          } catch (_) { return []; }
+        }),
+        StorageService.getShipments().catch(e => {
+          console.warn("Could not load shipments from Cloud, trying local:", e);
+          try {
+            const localVal = localStorage.getItem("of_ships");
+            return localVal ? JSON.parse(localVal) : [];
+          } catch (_) { return []; }
+        }),
+        StorageService.getPackagingCosts().catch(e => {
+          console.warn("Could not load packaging costs from Cloud, trying local:", e);
+          try {
+            const localVal = localStorage.getItem("of_pkgs");
+            return localVal ? JSON.parse(localVal) : [];
+          } catch (_) { return []; }
+        })
+      ]);
 
       setChars(pChars);
       setSeries(pSeries);
@@ -180,7 +148,6 @@ export default function App() {
 
   // A. CUSTOMER ORDERS LOG
   const saveCo = async (co: ClientOrder) => {
-    const isNew = !co.id;
     const finalId = co.id || 'co_' + Math.random().toString(36).slice(2, 10);
     const finalRecord: ClientOrder = {
       ...co,
@@ -202,11 +169,14 @@ export default function App() {
       linkedItems: (p.linkedItems || []).filter(li => li.coId !== id)
     }));
 
-    for (const p of updatedPos) {
-      await StorageService.savePreOrder(p);
-    }
+    // Detect which ones actually changed to avoid redundant writes
+    const changedPos = updatedPos.filter((item, idx) => item !== pos[idx]);
 
-    await StorageService.deleteClientOrder(id);
+    await Promise.all([
+      ...changedPos.map(p => StorageService.savePreOrder(p)),
+      StorageService.deleteClientOrder(id)
+    ]);
+    
     await loadAllData();
   };
 
@@ -258,12 +228,14 @@ export default function App() {
       } : c);
     });
 
-    // Save and commit client orders affected
-    for (const c of updatedCos) {
-      await StorageService.saveClientOrder(c);
-    }
+    // Save and commit ONLY client orders that actually changed
+    const changedCos = updatedCos.filter((item, idx) => item !== cos[idx]);
 
-    await StorageService.savePreOrder(finalRecord);
+    await Promise.all([
+      ...changedCos.map(c => StorageService.saveClientOrder(c)),
+      StorageService.savePreOrder(finalRecord)
+    ]);
+
     setModal(null);
     await loadAllData();
   };
@@ -272,14 +244,16 @@ export default function App() {
     if (!window.confirm('確定要永久刪除此海外採購預購單嗎？所有已關聯的客戶單品狀態將被重置回「待訂購」。')) return;
 
     const poDoc = pos.find(p => p.id === id);
+    const updatedCosMap = new Map<string, ClientOrder>();
+
     if (poDoc) {
-      // Restore linked items status and clear poId references
+      // Restore linked items status and clear poId references in consolidated Map
       const linked = poDoc.linkedItems || [];
       for (const li of linked) {
-        const co = cos.find(c => c.id === li.coId);
-        if (co) {
-          const updatedItems = co.items.map(i => i.id === li.itemId ? { ...i, status: 'pending' as const, poId: '' } : i);
-          await StorageService.saveClientOrder({ ...co, items: updatedItems });
+        const existingCo = updatedCosMap.get(li.coId) || cos.find(c => c.id === li.coId);
+        if (existingCo) {
+          const updatedItems = existingCo.items.map(i => i.id === li.itemId ? { ...i, status: 'pending' as const, poId: '' } : i);
+          updatedCosMap.set(li.coId, { ...existingCo, items: updatedItems });
         }
       }
     }
@@ -289,11 +263,14 @@ export default function App() {
       ...s,
       poIds: (s.poIds || []).filter(pid => pid !== id)
     }));
-    for (const s of updatedShips) {
-      await StorageService.saveShipment(s);
-    }
+    const changedShips = updatedShips.filter((item, idx) => item !== ships[idx]);
 
-    await StorageService.deletePreOrder(id);
+    await Promise.all([
+      ...Array.from(updatedCosMap.values()).map(co => StorageService.saveClientOrder(co)),
+      ...changedShips.map(s => StorageService.saveShipment(s)),
+      StorageService.deletePreOrder(id)
+    ]);
+
     await loadAllData();
   };
 
@@ -350,15 +327,16 @@ export default function App() {
       });
     }
 
-    // Safe updates commit block
-    for (const c of updatedCos) {
-      await StorageService.saveClientOrder(c);
-    }
-    for (const p of updatedPos) {
-      await StorageService.savePreOrder(p);
-    }
+    // Safe updates - filter only those truly changed to optimize DB writes
+    const changedCos = updatedCos.filter((item, idx) => item !== cos[idx]);
+    const changedPos = updatedPos.filter((item, idx) => item !== pos[idx]);
 
-    await StorageService.saveShipment(finalRecord);
+    await Promise.all([
+      ...changedCos.map(c => StorageService.saveClientOrder(c)),
+      ...changedPos.map(p => StorageService.savePreOrder(p)),
+      StorageService.saveShipment(finalRecord)
+    ]);
+
     setModal(null);
     await loadAllData();
   };
@@ -373,6 +351,8 @@ export default function App() {
     if (!window.confirm('確定要永久刪除此國際運送包裹打包單嗎？關聯單品狀態將復原回「已訂購」狀態。')) return;
 
     const shipDoc = ships.find(s => s.id === id);
+    const updatedCosMap = new Map<string, ClientOrder>();
+
     if (shipDoc) {
       const poIds = shipDoc.poIds || [];
       for (const poId of poIds) {
@@ -380,81 +360,98 @@ export default function App() {
         if (poObj) {
           const linked = poObj.linkedItems || [];
           for (const li of linked) {
-            const co = cos.find(c => c.id === li.coId);
-            if (co) {
-              const updatedItems = co.items.map(item => {
+            const existingCo = updatedCosMap.get(li.coId) || cos.find(c => c.id === li.coId);
+            if (existingCo) {
+              const updatedItems = existingCo.items.map(item => {
                 if (item.id === li.itemId && item.status !== 'sent_to_client') {
                   return { ...item, status: 'ordered' as const };
                 }
                 return item;
               });
-              await StorageService.saveClientOrder({ ...co, items: updatedItems });
+              updatedCosMap.set(li.coId, { ...existingCo, items: updatedItems });
             }
           }
         }
       }
     }
 
-    await StorageService.deleteShipment(id);
+    await Promise.all([
+      ...Array.from(updatedCosMap.values()).map(co => StorageService.saveClientOrder(co)),
+      StorageService.deleteShipment(id)
+    ]);
+    
     await loadAllData();
   };
 
   // D. AUXILIARIES WRAP PACKAGING BILLS
   const handleSavePkgs = async (newPkgs: PackagingCost[]) => {
     setPkgs(newPkgs);
-    // Find what changes and commit
     const currentLocal = await StorageService.getPackagingCosts();
     
-    // Save new/mutated ones
-    for (const p of newPkgs) {
-      await StorageService.savePackagingCost(p);
-    }
+    // Find what changed/is new versus what is deleted
+    const changedOrNew = newPkgs.filter(p => {
+      const existing = currentLocal.find(o => o.id === p.id);
+      return !existing || JSON.stringify(existing) !== JSON.stringify(p);
+    });
+
+    const savePromises = changedOrNew.map(p => StorageService.savePackagingCost(p));
     
     // Detect deletes
     const deletes = currentLocal.filter(l => !newPkgs.some(p => p.id === l.id));
-    for (const d of deletes) {
-      await StorageService.deletePackagingCost(d.id);
-    }
+    const deletePromises = deletes.map(d => StorageService.deletePackagingCost(d.id));
 
+    await Promise.all([...savePromises, ...deletePromises]);
     await loadAllData();
   };
 
   const handleSaveChars = async (newChars: Character[]) => {
     setChars(newChars);
     const curr = await StorageService.getChars();
-    for (const c of newChars) {
-      await StorageService.saveChar(c);
-    }
+    
+    const changedOrNew = newChars.filter(c => {
+      const existing = curr.find(o => o.id === c.id);
+      return !existing || JSON.stringify(existing) !== JSON.stringify(c);
+    });
+
+    const savePromises = changedOrNew.map(c => StorageService.saveChar(c));
     const deletes = curr.filter(o => !newChars.some(n => n.id === o.id));
-    for (const d of deletes) {
-      await StorageService.deleteChar(d.id);
-    }
+    const deletePromises = deletes.map(d => StorageService.deleteChar(d.id));
+
+    await Promise.all([...savePromises, ...deletePromises]);
     await loadAllData();
   };
 
   const handleSaveSeries = async (newSeries: Series[]) => {
     setSeries(newSeries);
     const curr = await StorageService.getSeries();
-    for (const s of newSeries) {
-      await StorageService.saveSeries(s);
-    }
+
+    const changedOrNew = newSeries.filter(s => {
+      const existing = curr.find(o => o.id === s.id);
+      return !existing || JSON.stringify(existing) !== JSON.stringify(s);
+    });
+
+    const savePromises = changedOrNew.map(s => StorageService.saveSeries(s));
     const deletes = curr.filter(o => !newSeries.some(n => n.id === o.id));
-    for (const d of deletes) {
-      await StorageService.deleteSeries(d.id);
-    }
+    const deletePromises = deletes.map(d => StorageService.deleteSeries(d.id));
+
+    await Promise.all([...savePromises, ...deletePromises]);
     await loadAllData();
   };
 
   const handleSaveProducts = async (newProducts: Product[]) => {
     setProducts(newProducts);
     const curr = await StorageService.getProducts();
-    for (const p of newProducts) {
-      await StorageService.saveProduct(p);
-    }
+
+    const changedOrNew = newProducts.filter(p => {
+      const existing = curr.find(o => o.id === p.id);
+      return !existing || JSON.stringify(existing) !== JSON.stringify(p);
+    });
+
+    const savePromises = changedOrNew.map(p => StorageService.saveProduct(p));
     const deletes = curr.filter(o => !newProducts.some(n => n.id === o.id));
-    for (const d of deletes) {
-      await StorageService.deleteProduct(d.id);
-    }
+    const deletePromises = deletes.map(d => StorageService.deleteProduct(d.id));
+
+    await Promise.all([...savePromises, ...deletePromises]);
     await loadAllData();
   };
 
