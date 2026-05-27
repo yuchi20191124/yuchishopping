@@ -86,10 +86,10 @@ export default function PreOrdersView({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-sans font-bold text-2xl text-gray-900 tracking-tight">
-            預購與採購單
+            採購單
           </h1>
           <p className="text-gray-500 text-xs mt-1">
-            記錄每次在日本或海外官網、門市刷卡下單的批次，並串聯該單品的客戶！
+            記錄每次在日本或海外官網、門市刷卡下單的各個採購批次，並串聯對應單品的客戶！
           </p>
         </div>
 
@@ -99,11 +99,11 @@ export default function PreOrdersView({
           id="btn-new-pre-order"
         >
           <Plus className="w-4.5 h-4.5" />
-          <span>新增預購單</span>
+          <span>新增採購單</span>
         </button>
       </div>
 
-      {/* Styled filter and search drawer */}
+      {/* Styled search drawer */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         {/* Search */}
         <div className="relative max-w-sm flex-1">
@@ -114,40 +114,10 @@ export default function PreOrdersView({
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="搜尋預購單名稱..."
+            placeholder="搜尋採購單名稱..."
             className="w-full pl-11 pr-4 h-12 border border-[#BEB8AE] focus:border-[#3A72A0] focus:ring-2 focus:ring-[#3A72A0]/20 bg-white rounded-xl text-s transition-all outline-none"
             id="inp-search-pos"
           />
-        </div>
-
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            onClick={() => setFilter('all')}
-            className={`px-4 h-11 text-xs font-semibold rounded-xl border cursor-pointer select-none transition-all ${
-              filter === 'all'
-                ? 'bg-[#3A72A0] text-white border-[#3A72A0]'
-                : 'bg-white text-gray-600 border-[#BEB8AE] hover:bg-gray-50'
-            }`}
-            id="filter-po-all"
-          >
-            全部
-          </button>
-          {PO_STAGES.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setFilter(s.id)}
-              className={`px-4 h-11 text-xs font-semibold rounded-xl border flex items-center gap-1 select-none transition-all cursor-pointer ${
-                filter === s.id
-                  ? 'bg-[#3A72A0] text-white border-[#3A72A0]'
-                  : 'bg-white text-gray-600 border-[#BEB8AE] hover:bg-gray-50'
-              }`}
-              id={`filter-po-${s.id}`}
-            >
-              <span>{s.emoji}</span>
-              <span>{s.label}</span>
-            </button>
-          ))}
         </div>
       </div>
 
