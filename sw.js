@@ -2,31 +2,33 @@ const CACHE_NAME = 'yuchishopping-cache-v2';
 const ASSETS_TO_CACHE = [
   './',
   'index.html',
-  'manifest.json',
-  'icon-192.png',
-  'icon-512.png'
+  'manifest.json'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(ASSETS_TO_CACHE);
-    }).then(() => self.skipWaiting())
+    }).catch((err) => {
+      console.warn('Pre-caching failed during SW install:', err);
+    })
   );
+  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
+    caches.keys().then((keys) => {
       return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
-            return caches.delete(cacheName);
+        keys.map((key) => {
+          if (key !== CACHE_NAME) {
+            return caches.delete(key);
           }
         })
       );
-    }).then(() => self.clients.claim())
+    })
   );
+  self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
