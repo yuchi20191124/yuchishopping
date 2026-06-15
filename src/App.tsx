@@ -226,6 +226,10 @@ export default function App() {
       createdAt: co.createdAt || new Date().toISOString()
     };
 
+    const originalCo = cos.find(c => c.id === finalId);
+    const previousIG = originalCo ? (originalCo.customerIG || '').trim() : '';
+    const previousName = originalCo ? (originalCo.customerName || '').trim() : '';
+
     await StorageService.saveClientOrder(finalRecord);
 
     // Auto-update or add customer block
@@ -233,10 +237,15 @@ export default function App() {
     const cleanName = (finalRecord.customerName || '').trim();
     
     if (cleanIG || cleanName) {
-      // Find matching customer safely
+      // Find matching customer safely, searching by OLD details if renamed, or NEW details otherwise
+      const searchIG = previousIG || cleanIG;
+      const searchName = previousName || cleanName;
+
       const existingCustomer = customers.find(c => 
-        (cleanIG && (c.customerIG || '').toLowerCase() === cleanIG.toLowerCase()) ||
-        (cleanName && (c.name || '').toLowerCase() === cleanName.toLowerCase())
+        c && (
+          (searchIG && (c.customerIG || '').toLowerCase() === searchIG.toLowerCase()) ||
+          (searchName && (c.name || '').toLowerCase() === searchName.toLowerCase())
+        )
       );
 
       if (!existingCustomer) {
@@ -262,6 +271,36 @@ export default function App() {
         if (updated) {
           await StorageService.saveCustomer(updatedCust);
           setCustomers(prev => prev.map(c => c.id === updatedCust.id ? updatedCust : c));
+        }
+
+        // Cascade update ALL other ClientOrders belonging to this customer to avoid orphaned or split records
+        const igToRename = (existingCustomer.customerIG || '').trim().toLowerCase();
+        const nameToRename = (existingCustomer.name || '').trim().toLowerCase();
+
+        if (igToRename || nameToRename) {
+          const ordersToUpdate = cos.filter(order => 
+            order.id !== finalId && (
+              (igToRename && (order.customerIG || '').toLowerCase() === igToRename) ||
+              (nameToRename && (order.customerName || '').toLowerCase() === nameToRename)
+            )
+          );
+
+          if (ordersToUpdate.length > 0) {
+            const updatedOrders = ordersToUpdate.map(order => ({
+              ...order,
+              customerIG: cleanIG || order.customerIG,
+              customerName: cleanName || order.customerName
+            }));
+
+            // Save all updated orders in parallel to database
+            await Promise.all(updatedOrders.map(order => StorageService.saveClientOrder(order)));
+
+            // Update in-memory state of client orders
+            setCos(prev => prev.map(order => {
+              const matches = updatedOrders.find(u => u.id === order.id);
+              return matches ? matches : order;
+            }));
+          }
         }
       }
     }
