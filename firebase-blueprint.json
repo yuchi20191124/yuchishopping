@@ -90,6 +90,20 @@
         "createdAt": { "type": "string" }
       },
       "required": ["id", "name", "amount", "date", "createdAt"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Customer profiles under master registry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "customerIG": { "type": "string" },
+        "phone": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "customerIG", "createdAt"]
     }
   },
   "firestore": {
@@ -120,6 +134,10 @@
     "of_pkgs": {
       "schema": "PackagingCost",
       "description": "Packaging box expenses"
+    },
+    "of_customers": {
+      "schema": "Customer",
+      "description": "Customer Master database"
     }
   }
 }
