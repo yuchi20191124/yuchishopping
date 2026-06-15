@@ -230,11 +230,13 @@ export default function App() {
     const previousIG = originalCo ? (originalCo.customerIG || '').trim() : '';
     const previousName = originalCo ? (originalCo.customerName || '').trim() : '';
 
-    await StorageService.saveClientOrder(finalRecord);
-
     // Auto-update or add customer block
     const cleanIG = (finalRecord.customerIG || '').trim();
     const cleanName = (finalRecord.customerName || '').trim();
+
+    let newCust: Customer | null = null;
+    let updatedCust: Customer | null = null;
+    let updatedOrders: ClientOrder[] = [];
     
     if (cleanIG || cleanName) {
       // Find matching customer safely, searching by OLD details if renamed, or NEW details otherwise
@@ -249,28 +251,25 @@ export default function App() {
       );
 
       if (!existingCustomer) {
-        const newCust: Customer = {
+        newCust = {
           id: 'cust_' + Math.random().toString(36).slice(2, 10),
           name: cleanName || cleanIG,
           customerIG: cleanIG || cleanName,
           createdAt: new Date().toISOString()
         };
-        await StorageService.saveCustomer(newCust);
-        setCustomers(prev => [...prev, newCust]);
       } else {
         let updated = false;
-        const updatedCust = { ...existingCustomer };
+        const tempCust = { ...existingCustomer };
         if (cleanName && (existingCustomer.name || '') !== cleanName) {
-          updatedCust.name = cleanName;
+          tempCust.name = cleanName;
           updated = true;
         }
         if (cleanIG && (existingCustomer.customerIG || '') !== cleanIG) {
-          updatedCust.customerIG = cleanIG;
+          tempCust.customerIG = cleanIG;
           updated = true;
         }
         if (updated) {
-          await StorageService.saveCustomer(updatedCust);
-          setCustomers(prev => prev.map(c => c.id === updatedCust.id ? updatedCust : c));
+          updatedCust = tempCust;
         }
 
         // Cascade update ALL other ClientOrders belonging to this customer to avoid orphaned or split records
@@ -286,31 +285,58 @@ export default function App() {
           );
 
           if (ordersToUpdate.length > 0) {
-            const updatedOrders = ordersToUpdate.map(order => ({
+            updatedOrders = ordersToUpdate.map(order => ({
               ...order,
               customerIG: cleanIG || order.customerIG,
               customerName: cleanName || order.customerName
-            }));
-
-            // Save all updated orders in parallel to database
-            await Promise.all(updatedOrders.map(order => StorageService.saveClientOrder(order)));
-
-            // Update in-memory state of client orders
-            setCos(prev => prev.map(order => {
-              const matches = updatedOrders.find(u => u.id === order.id);
-              return matches ? matches : order;
             }));
           }
         }
       }
     }
-    
-    // Direct in-memory state update for speed
-    setCos(prev => prev.some(c => c.id === finalId)
-      ? prev.map(c => c.id === finalId ? finalRecord : c)
-      : [...prev, finalRecord]
-    );
+
+    // --- APPLY STATE UPDATES IMMEDIATELY ---
+    if (newCust) {
+      setCustomers(prev => [...prev, newCust!]);
+    } else if (updatedCust) {
+      setCustomers(prev => prev.map(c => c.id === updatedCust!.id ? updatedCust! : c));
+    }
+
+    setCos(prev => {
+      let withSavedCo = prev.some(c => c.id === finalId)
+        ? prev.map(c => c.id === finalId ? finalRecord : c)
+        : [...prev, finalRecord];
+
+      if (updatedOrders.length > 0) {
+        withSavedCo = withSavedCo.map(order => {
+          const matched = updatedOrders.find(u => u.id === order.id);
+          return matched ? matched : order;
+        });
+      }
+      return withSavedCo;
+    });
+
+    // Close the dialogue instantly
     setModal(null);
+
+    // --- EXECUTE FIREBASE SAVES IN THE BACKGROUND ---
+    (async () => {
+      try {
+        await StorageService.saveClientOrder(finalRecord);
+
+        if (newCust) {
+          await StorageService.saveCustomer(newCust);
+        } else if (updatedCust) {
+          await StorageService.saveCustomer(updatedCust);
+        }
+
+        if (updatedOrders.length > 0) {
+          await Promise.all(updatedOrders.map(order => StorageService.saveClientOrder(order)));
+        }
+      } catch (e) {
+        console.error("Background saveCo error:", e);
+      }
+    })();
   };
 
   const deleteCo = async (id: string) => {
@@ -324,22 +350,38 @@ export default function App() {
 
     const changedPos = updatedPos.filter((item, idx) => item !== pos[idx]);
 
-    await Promise.all([
-      ...changedPos.map(p => StorageService.savePreOrder(p)),
-      StorageService.deleteClientOrder(id)
-    ]);
-    
-    // Direct state removal
+    // Direct state removal instantly
     setCos(prev => prev.filter(c => c.id !== id));
     setPos(updatedPos);
+
+    // Run Firebase delete and saves in the background
+    (async () => {
+      try {
+        await Promise.all([
+          ...changedPos.map(p => StorageService.savePreOrder(p)),
+          StorageService.deleteClientOrder(id)
+        ]);
+      } catch (e) {
+        console.error("Background deleteCo error:", e);
+      }
+    })();
   };
 
   // Toggle client order status
   const handleToggleOrdered = async (co: ClientOrder) => {
     const updated = { ...co, clientOrdered: !co.clientOrdered };
-    await StorageService.saveClientOrder(updated);
     
+    // Direct in-memory update
     setCos(prev => prev.map(c => c.id === co.id ? updated : c));
+
+    // Save in the background
+    (async () => {
+      try {
+        await StorageService.saveClientOrder(updated);
+      } catch (e) {
+        console.error("Background toggle error:", e);
+      }
+    })();
   };
 
   const handleMarkItemSent = async (coId: string, itemId: string) => {
@@ -348,8 +390,17 @@ export default function App() {
     const updatedItems = co.items.map(i => i.id === itemId ? { ...i, status: 'sent_to_client' as const } : i);
     const updated = { ...co, items: updatedItems };
     
-    await StorageService.saveClientOrder(updated);
+    // Direct in-memory update
     setCos(prev => prev.map(c => c.id === coId ? updated : c));
+
+    // Save in the background
+    (async () => {
+      try {
+        await StorageService.saveClientOrder(updated);
+      } catch (e) {
+        console.error("Background mark item sent error:", e);
+      }
+    })();
   };
 
   // B. PRE-ORDERS / MERCHANDISE PURCHASES BINDER
@@ -387,11 +438,7 @@ export default function App() {
 
     const changedCos = updatedCos.filter((item, idx) => item !== cos[idx]);
 
-    await Promise.all([
-      ...changedCos.map(c => StorageService.saveClientOrder(c)),
-      StorageService.savePreOrder(finalRecord)
-    ]);
-
+    // Apply state updates instantly
     setCos(updatedCos);
     setPos(prev => prev.some(p => p.id === finalId)
       ? prev.map(p => p.id === finalId ? finalRecord : p)
@@ -399,6 +446,18 @@ export default function App() {
     );
 
     setModal(null);
+
+    // Save in the background
+    (async () => {
+      try {
+        await Promise.all([
+          ...changedCos.map(c => StorageService.saveClientOrder(c)),
+          StorageService.savePreOrder(finalRecord)
+        ]);
+      } catch (e) {
+        console.error("Background savePo error:", e);
+      }
+    })();
   };
 
   const deletePo = async (id: string) => {
@@ -424,15 +483,23 @@ export default function App() {
     }));
     const changedShips = updatedShips.filter((item, idx) => item !== ships[idx]);
 
-    await Promise.all([
-      ...Array.from(updatedCosMap.values()).map(co => StorageService.saveClientOrder(co)),
-      ...changedShips.map(s => StorageService.saveShipment(s)),
-      StorageService.deletePreOrder(id)
-    ]);
-
+    // Apply state updates instantly
     setCos(prev => prev.map(c => updatedCosMap.has(c.id) ? updatedCosMap.get(c.id)! : c));
     setShips(updatedShips);
     setPos(prev => prev.filter(p => p.id !== id));
+
+    // Save in background
+    (async () => {
+      try {
+        await Promise.all([
+          ...Array.from(updatedCosMap.values()).map(co => StorageService.saveClientOrder(co)),
+          ...changedShips.map(s => StorageService.saveShipment(s)),
+          StorageService.deletePreOrder(id)
+        ]);
+      } catch (e) {
+        console.error("Background deletePo error:", e);
+      }
+    })();
   };
 
   // C. FREIGHT INTERNATIONAL SHIPMENT TRACKING
@@ -486,12 +553,7 @@ export default function App() {
     const changedCos = updatedCos.filter((item, idx) => item !== cos[idx]);
     const changedPos = updatedPos.filter((item, idx) => item !== pos[idx]);
 
-    await Promise.all([
-      ...changedCos.map(c => StorageService.saveClientOrder(c)),
-      ...changedPos.map(p => StorageService.savePreOrder(p)),
-      StorageService.saveShipment(finalRecord)
-    ]);
-
+    // Apply state updates instantly
     setCos(updatedCos);
     setPos(updatedPos);
     setShips(prev => prev.some(s => s.id === finalId)
@@ -500,6 +562,19 @@ export default function App() {
     );
 
     setModal(null);
+
+    // Save in background
+    (async () => {
+      try {
+        await Promise.all([
+          ...changedCos.map(c => StorageService.saveClientOrder(c)),
+          ...changedPos.map(p => StorageService.savePreOrder(p)),
+          StorageService.saveShipment(finalRecord)
+        ]);
+      } catch (e) {
+        console.error("Background saveShip error:", e);
+      }
+    })();
   };
 
   const updateShipStageDirectly = async (shipId: string, stage: 'packed' | 'shipped_from' | 'in_transit' | 'arrived') => {
@@ -536,13 +611,21 @@ export default function App() {
       }
     }
 
-    await Promise.all([
-      ...Array.from(updatedCosMap.values()).map(co => StorageService.saveClientOrder(co)),
-      StorageService.deleteShipment(id)
-    ]);
-    
+    // Apply state updates instantly
     setCos(prev => prev.map(c => updatedCosMap.has(c.id) ? updatedCosMap.get(c.id)! : c));
     setShips(prev => prev.filter(s => s.id !== id));
+
+    // Save in background
+    (async () => {
+      try {
+        await Promise.all([
+          ...Array.from(updatedCosMap.values()).map(co => StorageService.saveClientOrder(co)),
+          StorageService.deleteShipment(id)
+        ]);
+      } catch (e) {
+        console.error("Background deleteShip error:", e);
+      }
+    })();
   };
 
   // D. AUXILIARIES WRAP PACKAGING BILLS
@@ -783,4 +866,3 @@ export default function App() {
     </div>
   );
 }
-
