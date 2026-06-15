@@ -50,6 +50,17 @@ export interface Customer {
   phone?: string;
   notes?: string;
   createdAt: string;
+  vipLevel?: 'VIP' | 'Regular' | 'New' | 'Blacklist';
+  wishes?: WishItem[];
+}
+
+export interface WishItem {
+  id: string;
+  itemName: string;
+  price?: string;
+  status: 'pending' | 'success' | 'failed';
+  notes?: string;
+  createdAt: string;
 }
 
 export interface PreOrder {
