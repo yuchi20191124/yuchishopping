@@ -17,11 +17,12 @@ import {
   Link, 
   Layers 
 } from 'lucide-react';
-import { Shipment, PreOrder } from '../types';
+import { Shipment, PreOrder, ClientOrder } from '../types';
 
 interface ShipmentViewProps {
   ships: Shipment[];
   pos: PreOrder[];
+  cos?: ClientOrder[];
   onEdit: (ship: Shipment) => void;
   onDelete: (id: string) => void;
   onNew: () => void;
@@ -31,6 +32,7 @@ interface ShipmentViewProps {
 export default function ShipmentView({
   ships,
   pos,
+  cos = [],
   onEdit,
   onDelete,
   onNew,
@@ -214,7 +216,7 @@ export default function ShipmentView({
                       <Layers className="w-3.5 h-3.5" /> 包含於本集運包裏中的預購採購單：
                     </h5>
 
-                    <div className="divide-y divide-gray-100 bg-white border border-[#BEB8AE]/60 rounded-xl overflow-hidden text-xs">
+                    <div className="divide-y divide-gray-150 bg-white border border-[#BEB8AE]/60 rounded-xl overflow-hidden text-xs">
                       {linkedPos.length === 0 ? (
                         <div className="p-4 text-center text-gray-400">
                           本運送包裹目前沒有與任何採購單綁定，可點擊編輯進行串聯！
@@ -229,24 +231,69 @@ export default function ShipmentView({
                           };
                           const poSt = stagesMap[p.stage] || { label: '已下單', emoji: '🛒' };
 
+                          const detailItems = (p.linkedItems || []).map(li => {
+                            const clientOrder = cos.find(c => c.id === li.coId);
+                            const item = clientOrder?.items?.find(i => i.id === li.itemId);
+                            return {
+                              coId: li.coId,
+                              itemId: li.itemId,
+                              customerIG: clientOrder?.customerIG || '未知',
+                              customerName: clientOrder?.customerName || '',
+                              series: item?.series || '',
+                              spec: item?.spec || '',
+                              character: item?.character || '',
+                              qty: item?.qty || 1,
+                              price: item?.price || '0',
+                              status: item?.status || 'pending'
+                            };
+                          });
+
                           return (
-                            <div key={p.id} className="p-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-[#FFFCF7]/30 hover:bg-[#EDE8DE]/10 transition-all">
-                              <div className="min-w-0 flex items-center gap-2">
-                                <span className="font-bold text-gray-800 text-sm">
-                                  {p.name || '未命名'}
-                                </span>
+                            <div key={p.id} className="p-3.5 bg-[#FFFCF7]/30 hover:bg-[#EDE8DE]/10 border-b border-gray-150/40 last:border-0 transition-all space-y-2.5">
+                              {/* Header info */}
+                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                <div className="min-w-0 flex items-center gap-2">
+                                  <span className="font-extrabold text-gray-800 text-sm flex items-center gap-1.5">
+                                    📋 {p.name || '未命名'}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+                                  <span className="px-2 py-0.5 bg-[#3A72A0]/10 rounded text-[10px] text-[#3A72A0] font-bold border border-[#3A72A0]/15">
+                                    {poSt.emoji} {poSt.label}
+                                  </span>
+                                  <span className="font-mono font-extrabold text-[#3a72a0]">
+                                    ${parseFloat(p.cardAmount || '0').toLocaleString()}
+                                  </span>
+                                </div>
                               </div>
-                              <div className="flex items-center justify-between sm:justify-end gap-3.5">
-                                <span className="text-gray-400 text-[11px]">
-                                  {p.linkedItems?.length || 0} 客戶單品
-                                </span>
-                                <span className="px-2 py-0.5 bg-gray-100 rounded text-[10px] text-gray-600 border border-gray-200">
-                                  {poSt.emoji} {poSt.label}
-                                </span>
-                                <span className="font-mono font-bold text-gray-700">
-                                  ${parseFloat(p.cardAmount || '0').toLocaleString()}
-                                </span>
-                              </div>
+
+                              {/* Detailed items table/list */}
+                              {detailItems.length > 0 ? (
+                                <div className="bg-white/80 border border-gray-100 rounded-xl p-2.5 space-y-2 text-[11px]">
+                                  <div className="text-[10px] text-gray-400 font-bold font-mono tracking-wider">📦 商品打包/撿貨明細 (共 {detailItems.length} 件):</div>
+                                  <div className="space-y-1.5 divide-y divide-gray-50">
+                                    {detailItems.map((item, dIdx) => (
+                                      <div key={dIdx} className={`${dIdx > 0 ? 'pt-1.5' : ''} flex flex-col sm:flex-row sm:items-center justify-between gap-1.5`}>
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          {/* Customer Owner badge */}
+                                          <span className="bg-[#ede8de] text-gray-700 px-1.5 py-0.5 rounded font-bold text-[10px] flex items-center gap-1">
+                                            👤 {item.customerName || item.customerIG}
+                                          </span>
+                                          <span className="text-gray-850 font-semibold font-sans text-xs">
+                                            {[item.series, item.spec, item.character].filter(Boolean).join(' · ')}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-2.5 self-end sm:self-auto shrink-0">
+                                          <span className="font-extrabold text-gray-500">× {item.qty}</span>
+                                          <span className="font-mono text-gray-400 font-bold">${parseFloat(item.price).toLocaleString()}</span>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="text-[10.5px] text-gray-400 italic pl-5">本採購單中目前未載入任何具體客訂商品。</div>
+                              )}
                             </div>
                           );
                         })
