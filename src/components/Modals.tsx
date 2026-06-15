@@ -23,8 +23,30 @@ import {
   Product, 
   Character, 
   Series, 
-  CoItem 
+  CoItem,
+  Customer
 } from '../types';
+
+/* ── Levenshtein Distance for fuzzy matching ── */
+function getLevenshteinDistance(a: string, b: string): number {
+  const tmp: number[][] = [];
+  for (let i = 0; i <= a.length; i++) {
+    tmp[i] = [i];
+  }
+  for (let j = 0; j <= b.length; j++) {
+    tmp[0][j] = j;
+  }
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      tmp[i][j] = Math.min(
+        tmp[i - 1][j] + 1,
+        tmp[i][j - 1] + 1,
+        tmp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+    }
+  }
+  return tmp[a.length][b.length];
+}
 
 /* ── HELPERS: Generate Unique Standard ID ── */
 const mkId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -47,6 +69,7 @@ interface CoModalProps {
   products: Product[];
   chars: Character[];
   series: Series[];
+  customers?: Customer[];
   expandProduct: (p: Product) => string;
   onSave: (co: ClientOrder) => void;
   onClose: () => void;
@@ -57,6 +80,7 @@ export function CoModal({
   products,
   chars,
   series,
+  customers = [],
   expandProduct,
   onSave,
   onClose
@@ -66,18 +90,62 @@ export function CoModal({
     if (order) {
       return { 
         ...order, 
+        customerName: order.customerName || '',
         items: (order.items || []).map(i => ({ ...i })) 
       };
     }
     return {
       id: '',
       customerIG: '',
+      customerName: '',
       clientOrdered: false,
       items: [EMPTY_CO_ITEM()],
       notes: '',
       createdAt: ''
     };
   });
+
+  // State for Customer search / matching
+  const [focusedField, setFocusedField] = useState<'name' | 'ig' | null>(null);
+  const [custSearchVal, setCustSearchVal] = useState('');
+
+  const matchedCustomers = React.useMemo(() => {
+    const q = custSearchVal.trim().toLowerCase();
+    if (!q) return [];
+
+    const exactMatches: Customer[] = [];
+    const startsWithMatches: Customer[] = [];
+    const includesMatches: Customer[] = [];
+    const fuzzyMatches: Customer[] = [];
+
+    customers.forEach(cust => {
+      const name = (cust.name || '').toLowerCase();
+      const ig = (cust.customerIG || '').toLowerCase();
+
+      if (name === q || ig === q) {
+        exactMatches.push(cust);
+      } else if (name.startsWith(q) || ig.startsWith(q)) {
+        startsWithMatches.push(cust);
+      } else if (name.includes(q) || ig.includes(q)) {
+        includesMatches.push(cust);
+      } else if (q.length >= 2) {
+        const distName = getLevenshteinDistance(name, q);
+        const distIg = getLevenshteinDistance(ig, q);
+        if (distName <= 2 || distIg <= 2) {
+          fuzzyMatches.push(cust);
+        }
+      }
+    });
+
+    const combined = [...exactMatches, ...startsWithMatches, ...includesMatches, ...fuzzyMatches];
+    // De-duplicate by id
+    const seen = new Set();
+    return combined.filter(c => {
+      if (seen.has(c.id)) return false;
+      seen.add(c.id);
+      return true;
+    }).slice(0, 5);
+  }, [customers, custSearchVal]);
 
   // Keep track of keyword searches for each item line index
   const [lineSearch, setLineSearch] = useState<Record<string, string>>({});
@@ -127,12 +195,17 @@ export function CoModal({
   };
 
   const handleSave = () => {
-    if (!form.customerIG.trim()) {
-      alert('請輸入客人的 IG 帳號名！');
+    const cleanIG = form.customerIG.trim().replace(/^@/, '');
+    const cleanName = (form.customerName || '').trim();
+    if (!cleanIG && !cleanName) {
+      alert('請填寫客戶名字或 IG 帳號！');
       return;
     }
-    const cleanIG = form.customerIG.trim().replace(/^@/, '');
-    onSave({ ...form, customerIG: cleanIG });
+    onSave({ 
+      ...form, 
+      customerIG: cleanIG || cleanName, 
+      customerName: cleanName || cleanIG 
+    });
   };
 
   return (
@@ -140,19 +213,96 @@ export function CoModal({
       <ModalHeader title={isEdit ? '編輯客戶訂單貨夾' : '新增客戶代購訂單'} onClose={onClose} />
       
       <div className="space-y-4 text-xs">
-        {/* Customer Basic Section */}
-        <div className="bg-[#ede8de]/50 p-4 border border-[#BEB8AE]/60 rounded-xl">
-          <label className="text-[10px] text-gray-400 block tracking-wider uppercase font-bold mb-1">
-            客人的 Instagram 帳號 (不需加 @ 符號) *
-          </label>
-          <input
-            type="text"
-            value={form.customerIG}
-            onChange={(e) => setForm(f => ({ ...f, customerIG: e.target.value }))}
-            placeholder="例如：yuchishopping"
-            className="w-full px-3 h-10 border border-[#BEB8AE] focus:border-[#3A72A0] rounded-xl text-xs bg-white text-gray-800 outline-none font-semibold transition-all h-11"
-            id="modal-co-customer-ig"
-          />
+        {/* Customer Autocomplete Section */}
+        <div className="bg-[#ede8de]/50 p-4 border border-[#BEB8AE]/60 rounded-xl space-y-3 relative">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="relative">
+              <label className="text-[10px] text-gray-400 block tracking-wider uppercase font-bold mb-1">
+                👥 客人名字 / 暱稱 *
+              </label>
+              <input
+                type="text"
+                value={form.customerName || ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setForm(f => ({ ...f, customerName: val }));
+                  setCustSearchVal(val);
+                  setFocusedField('name');
+                }}
+                onFocus={() => {
+                  setFocusedField('name');
+                  setCustSearchVal(form.customerName || '');
+                }}
+                placeholder="例如：小華 / yuchi"
+                className="w-full px-3 h-10 border border-[#BEB8AE] focus:border-[#3A72A0] rounded-xl text-xs bg-white text-gray-800 outline-none font-semibold transition-all"
+                id="modal-co-customer-name"
+              />
+            </div>
+
+            <div className="relative">
+              <label className="text-[10px] text-gray-400 block tracking-wider uppercase font-bold mb-1">
+                📸 Instagram 帳號 *
+              </label>
+              <input
+                type="text"
+                value={form.customerIG}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setForm(f => ({ ...f, customerIG: val }));
+                  setCustSearchVal(val);
+                  setFocusedField('ig');
+                }}
+                onFocus={() => {
+                  setFocusedField('ig');
+                  setCustSearchVal(form.customerIG || '');
+                }}
+                placeholder="例如：yuchishopping"
+                className="w-full px-3 h-10 border border-[#BEB8AE] focus:border-[#3A72A0] rounded-xl text-xs bg-white text-gray-800 outline-none font-semibold transition-all"
+                id="modal-co-customer-ig"
+              />
+            </div>
+          </div>
+
+          {/* Customer Autocomplete Suggestions list panel */}
+          {focusedField && matchedCustomers.length > 0 && (
+            <div className="absolute top-[100%] left-4 right-4 bg-white border-2 border-[#1E1E1E] rounded-xl shadow-xl z-50 divide-y divide-gray-150 mt-1 max-h-48 overflow-y-auto">
+              <div className="p-1.5 bg-gray-50 text-[10px] text-gray-400 font-bold block">
+                🔍 系統已匹配到相似客戶主檔 (點選快速帶入) ：
+              </div>
+              {matchedCustomers.map(cust => (
+                <div
+                  key={cust.id}
+                  onClick={() => {
+                    setForm(f => ({
+                      ...f,
+                      customerName: cust.name,
+                      customerIG: cust.customerIG
+                    }));
+                    setFocusedField(null);
+                  }}
+                  className="p-2.5 hover:bg-gray-100 flex items-center justify-between text-xs cursor-pointer text-gray-900"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-[#3A72A0]">👤 {cust.name}</span>
+                    <span className="text-gray-400">(@{cust.customerIG})</span>
+                  </div>
+                  {cust.phone && <span className="text-[10px] bg-gray-150 text-gray-600 px-2 py-0.5 rounded font-mono">{cust.phone}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {focusedField && custSearchVal.trim() && matchedCustomers.length === 0 && (
+            <div className="absolute top-[100%] left-4 right-4 bg-amber-50 border border-amber-300 rounded-xl shadow-md z-50 p-2 mt-1 text-[11px] text-amber-700 flex items-center gap-1.5">
+              <span className="shrink-0">🆕</span>
+              <span>「{custSearchVal}」為新名字，儲存後系統將自動加入客戶主檔！</span>
+            </div>
+          )}
+
+          {/* Click away block overlay for closing autocomplete */}
+          {focusedField && (
+            <div className="fixed inset-0 z-30 opacity-0 pointer-events-auto" onClick={() => setFocusedField(null)} />
+          )}
         </div>
 
         {/* Ordered multi items block container */}
@@ -569,6 +719,7 @@ interface ShipModalProps {
   ship: Shipment | null;
   pos: PreOrder[];
   ships: Shipment[];
+  cos?: ClientOrder[];
   onSave: (ship: Shipment) => void;
   onClose: () => void;
 }
@@ -577,6 +728,7 @@ export function ShipModal({
   ship,
   pos,
   ships,
+  cos = [],
   onSave,
   onClose
 }: ShipModalProps) {
@@ -702,7 +854,7 @@ export function ShipModal({
             </p>
           </div>
 
-          <div className="max-h-52 overflow-y-auto space-y-2 pr-1 py-1">
+          <div className="max-h-72 overflow-y-auto space-y-2 pr-1 py-1">
             {pos.length === 0 ? (
               <div className="p-6 text-center text-gray-400">
                 目前全資料庫中，沒有建立任何採購單（預購單）。請先至<b>預購訂單</b>新增。
@@ -712,11 +864,24 @@ export function ShipModal({
                 const isChecked = form.poIds.includes(poItem.id);
                 const isLoadedElsewhere = boundPoIds.has(poItem.id);
 
+                const poiInfo = (poItem.linkedItems || []).map(li => {
+                  const clientOrder = cos?.find(c => c.id === li.coId);
+                  const item = clientOrder?.items?.find(i => i.id === li.itemId);
+                  return {
+                    customerIG: clientOrder?.customerIG || '',
+                    customerName: clientOrder?.customerName || '',
+                    series: item?.series || '',
+                    spec: item?.spec || '',
+                    character: item?.character || '',
+                    qty: item?.qty || 1
+                  };
+                }).filter(info => info.series || info.character || info.spec);
+
                 return (
                   <label
                     key={poItem.id}
                     onClick={() => handleTogglePoId(poItem.id)}
-                    className={`flex items-center justify-between p-3 rounded-xl border select-none text-[12px] ${
+                    className={`flex items-start justify-between p-3.5 rounded-xl border select-none text-[12px] gap-2 ${
                       isLoadedElsewhere 
                         ? 'bg-gray-200/50 border-gray-200 text-gray-400 cursor-not-allowed opacity-60' 
                         : isChecked
@@ -724,27 +889,44 @@ export function ShipModal({
                           : 'bg-white border-gray-150 text-gray-600 hover:bg-gray-100 cursor-pointer'
                     }`}
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-start gap-2.5 min-w-0">
                       <input
                         type="checkbox"
                         checked={isChecked}
                         disabled={isLoadedElsewhere}
                         readOnly
-                        className="w-4 h-4 shrink-0 rounded text-[#3A72A0] cursor-pointer"
+                        className="w-4 h-4 shrink-0 rounded text-[#3A72A0] cursor-pointer mt-1"
                       />
                       <div className="min-w-0">
-                        <span className="font-bold">{poItem.name}</span>
+                        <span className="font-extrabold text-sm text-gray-800">📋 {poItem.name}</span>
                         {isLoadedElsewhere && (
-                          <span className="text-[9px] text-[#3A72A0] bg-[#3A72A0]/5 px-2.5 py-0.5 rounded border border-[#3A72A0]/10 shrink-0 block sm:inline ml-0 sm:ml-2">
+                          <span className="text-[9.5px] text-[#3A72A0] bg-[#3A72A0]/5 px-2.5 py-0.5 rounded border border-[#3A72A0]/10 shrink-0 inline-block mt-1">
                             已在其他託運包裹中
                           </span>
+                        )}
+                        {/* Sub-items info display block */}
+                        {poiInfo.length > 0 && (
+                          <div className="mt-2 space-y-1.5 pl-3 border-l-[3px] border-[#3A72A0]/20 text-[11px] text-gray-600 font-sans">
+                            {poiInfo.map((pInfo, pIdx) => (
+                              <div key={pIdx} className="flex items-center gap-1.5 flex-wrap">
+                                <span className="bg-[#ede8de] text-gray-700 px-1.5 py-0.2 rounded font-bold text-[9.5px]">
+                                  👤 {pInfo.customerName || pInfo.customerIG}
+                                </span>
+                                <span className="font-medium text-gray-700">{pInfo.series} {pInfo.spec} ({pInfo.character})</span>
+                                <span className="text-[10px] text-gray-400 font-bold">× {pInfo.qty}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {poiInfo.length === 0 && (
+                          <span className="text-[10px] text-gray-400 italic block mt-1 font-mono">（無代購客訂商品綁定）</span>
                         )}
                       </div>
                     </div>
 
-                    <div className="shrink-0 flex items-center gap-3">
-                      <span className="text-[10px] text-gray-400">{poItem.linkedItems?.length || 0} 品項 </span>
-                      <span className="font-mono font-bold text-gray-700">${parseFloat(poItem.cardAmount || '0').toLocaleString()}</span>
+                    <div className="shrink-0 flex flex-col items-end gap-1.5">
+                      <span className="text-[10px] text-gray-400 font-mono font-bold uppercase">{poItem.linkedItems?.length || 0} 件客訂品 </span>
+                      <span className="font-mono font-extrabold text-[#3a72a0] text-sm">${parseFloat(poItem.cardAmount || '0').toLocaleString()}</span>
                     </div>
                   </label>
                 );
