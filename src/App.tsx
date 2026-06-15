@@ -233,10 +233,10 @@ export default function App() {
     const cleanName = (finalRecord.customerName || '').trim();
     
     if (cleanIG || cleanName) {
-      // Find matching customer
+      // Find matching customer safely
       const existingCustomer = customers.find(c => 
-        (cleanIG && c.customerIG.toLowerCase() === cleanIG.toLowerCase()) ||
-        (cleanName && c.name.toLowerCase() === cleanName.toLowerCase())
+        (cleanIG && (c.customerIG || '').toLowerCase() === cleanIG.toLowerCase()) ||
+        (cleanName && (c.name || '').toLowerCase() === cleanName.toLowerCase())
       );
 
       if (!existingCustomer) {
@@ -251,11 +251,11 @@ export default function App() {
       } else {
         let updated = false;
         const updatedCust = { ...existingCustomer };
-        if (cleanName && existingCustomer.name !== cleanName) {
+        if (cleanName && (existingCustomer.name || '') !== cleanName) {
           updatedCust.name = cleanName;
           updated = true;
         }
-        if (cleanIG && existingCustomer.customerIG !== cleanIG) {
+        if (cleanIG && (existingCustomer.customerIG || '') !== cleanIG) {
           updatedCust.customerIG = cleanIG;
           updated = true;
         }
@@ -744,3 +744,4 @@ export default function App() {
     </div>
   );
 }
+
