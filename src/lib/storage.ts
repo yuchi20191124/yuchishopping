@@ -23,7 +23,8 @@ import {
   ClientOrder, 
   PreOrder, 
   Shipment, 
-  PackagingCost 
+  PackagingCost,
+  Customer
 } from '../types';
 
 // Check if Firebase configuration is provided and valid
@@ -521,6 +522,57 @@ export const StorageService = {
     }
   },
 
+  // 8. CUSTOMERS
+  async getCustomers(): Promise<Customer[]> {
+    const local = getLocal("of_customers", []);
+    if (!this.isCloudActive()) return local;
+
+    try {
+      const snap = await getDocs(collection(db, "of_customers"));
+      const items: Customer[] = [];
+      snap.forEach((docSnap) => {
+        items.push(docSnap.data() as Customer);
+      });
+      const merged = items.length > 0 ? items : local;
+      saveLocal("of_customers", merged);
+      return merged;
+    } catch (e) {
+      handleFirestoreError(e, OperationType.LIST, "of_customers");
+      return local;
+    }
+  },
+
+  async saveCustomer(item: Customer): Promise<void> {
+    const current = getLocal("of_customers", []);
+    const updated = current.some(c => c.id === item.id)
+      ? current.map(c => c.id === item.id ? item : c)
+      : [...current, item];
+    
+    saveLocal("of_customers", updated);
+
+    if (this.isCloudActive()) {
+      try {
+        await setDoc(doc(db, "of_customers", item.id), item);
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, `of_customers/${item.id}`);
+      }
+    }
+  },
+
+  async deleteCustomer(id: string): Promise<void> {
+    const current = getLocal("of_customers", []);
+    const updated = current.filter(c => c.id !== id);
+    saveLocal("of_customers", updated);
+
+    if (this.isCloudActive()) {
+      try {
+        await deleteDoc(doc(db, "of_customers", id));
+      } catch (e) {
+        handleFirestoreError(e, OperationType.DELETE, `of_customers/${id}`);
+      }
+    }
+  },
+
   // DATA BACKUP & RESTORE UTILITIES
   exportAllData(): string {
     const data = {
@@ -530,7 +582,8 @@ export const StorageService = {
       of_cos: getLocal("of_cos", []),
       of_pos: getLocal("of_pos", []),
       of_ships: getLocal("of_ships", []),
-      of_pkgs: getLocal("of_pkgs", [])
+      of_pkgs: getLocal("of_pkgs", []),
+      of_customers: getLocal("of_customers", [])
     };
     return JSON.stringify(data, null, 2);
   },
@@ -538,7 +591,7 @@ export const StorageService = {
   async importAllData(jsonStr: string): Promise<boolean> {
     try {
       const data = JSON.parse(jsonStr);
-      const keys = ["of_chars", "of_series", "of_products", "of_cos", "of_pos", "of_ships", "of_pkgs"];
+      const keys = ["of_chars", "of_series", "of_products", "of_cos", "of_pos", "of_ships", "of_pkgs", "of_customers"];
       
       // Perform validation check to verify we aren't uploading dynamic noise
       for (const k of keys) {
