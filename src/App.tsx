@@ -339,6 +339,74 @@ export default function App() {
     })();
   };
 
+  const handleSaveCustomer = async (cust: Customer) => {
+    const finalId = cust.id || 'cust_' + Math.random().toString(36).slice(2, 10);
+    const finalRecord: Customer = {
+      ...cust,
+      id: finalId,
+      createdAt: cust.createdAt || new Date().toISOString()
+    };
+
+    // 1. Instantly update customer state
+    setCustomers(prev => {
+      const exists = prev.some(c => c.id === finalId);
+      return exists ? prev.map(c => c.id === finalId ? finalRecord : c) : [...prev, finalRecord];
+    });
+
+    // 2. Cascade rename matching orders
+    const oldCust = customers.find(c => c.id === finalId);
+    let updatedOrders: ClientOrder[] = [];
+    if (oldCust) {
+      const oldIG = (oldCust.customerIG || '').trim().toLowerCase();
+      const oldName = (oldCust.name || '').trim().toLowerCase();
+      const newIG = (finalRecord.customerIG || '').trim();
+      const newName = (finalRecord.name || '').trim();
+
+      if (oldIG !== newIG.toLowerCase() || oldName !== newName.toLowerCase()) {
+        const matchingOrders = cos.filter(order => 
+          (oldIG && (order.customerIG || '').toLowerCase() === oldIG) ||
+          (oldName && (order.customerName || '').toLowerCase() === oldName)
+        );
+
+        if (matchingOrders.length > 0) {
+          updatedOrders = matchingOrders.map(order => ({
+            ...order,
+            customerIG: newIG || order.customerIG,
+            customerName: newName || order.customerName
+          }));
+
+          // Update state
+          setCos(prev => prev.map(o => {
+            const u = updatedOrders.find(uo => uo.id === o.id);
+            return u ? u : o;
+          }));
+        }
+      }
+    }
+
+    // 3. Save background database operations
+    (async () => {
+      try {
+        await StorageService.saveCustomer(finalRecord);
+        if (updatedOrders.length > 0) {
+          await Promise.all(updatedOrders.map(o => StorageService.saveClientOrder(o)));
+        }
+      } catch (err) {
+        console.error("Background save customer error:", err);
+      }
+    })();
+  };
+
+  const handleDeleteCustomer = async (id: string) => {
+    if (!window.confirm('確定要永久刪除此客戶主檔嗎？這不會刪除該客戶已產生的歷史代購訂單。')) return;
+    setCustomers(prev => prev.filter(c => c.id !== id));
+    try {
+      await StorageService.deleteCustomer(id);
+    } catch (e) {
+      console.error("Delete customer error:", e);
+    }
+  };
+
   const deleteCo = async (id: string) => {
     if (!window.confirm('確定要永久刪除此客戶訂單檔案嗎？將會解除所有已串聯預購包裹的綁定。')) return;
     
@@ -753,6 +821,14 @@ export default function App() {
             onDelete={deleteCo}
             onNew={() => setModal({ type: 'co', data: null })}
             onMergeSelectedOrders={handleMergeSelectedOrders}
+            customers={customers}
+            onSaveCustomer={handleSaveCustomer}
+            onDeleteCustomer={handleDeleteCustomer}
+            products={products}
+            expandProduct={expandProduct}
+            onSaveCo={saveCo}
+            chars={chars}
+            series={series}
           />
         )}
 
