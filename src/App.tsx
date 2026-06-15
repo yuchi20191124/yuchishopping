@@ -157,28 +157,18 @@ export default function App() {
 
   /* ──────────────── CUSTOM BUSINESS PROCESSORS ──────────────── */
 
-  // Merge multiple orders of the same customer IG
-  const handleMergeOrders = async (customerIG: string) => {
-    if (!customerIG) return;
-    const targets = cos.filter(c => (c.customerIG || '').trim().toLowerCase() === customerIG.trim().toLowerCase());
-    if (targets.length <= 1) return;
-
-    if (!window.confirm(`確定要為 @${customerIG} 進行倂單（合併訂單）嗎？\n這會將 ${targets.length} 筆客戶訂單合併為 1 筆，並自動重新關聯已有的海外採購預購單。`)) {
-      return;
-    }
-
-    // Sort to make the earliest order the master target
-    targets.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-    const master = targets[0];
-    const duplicates = targets.slice(1);
+  // Merge multiple user-selected orders
+  const handleMergeSelectedOrders = async (masterId: string, duplicateIds: string[]) => {
+    if (!masterId || duplicateIds.length === 0) return;
+    
+    const master = cos.find(c => c.id === masterId);
+    const duplicates = cos.filter(c => duplicateIds.includes(c.id));
+    if (!master) return;
 
     // Merge items
     const mergedItems: CoItem[] = [...master.items];
-    const duplicateIds = duplicates.map(d => d.id);
-
     duplicates.forEach(d => {
-      // Keep their original item IDs intact so preorder linkages remain correct
-      mergedItems.push(...d.items);
+      mergedItems.push(...(d.items || []));
     });
 
     // Merge notes
@@ -203,7 +193,7 @@ export default function App() {
         ...po,
         linkedItems: po.linkedItems.map(li => {
           if (duplicateIds.includes(li.coId)) {
-            return { ...li, coId: master.id }; // point old duplicate coId to master.id
+            return { ...li, coId: masterId }; // point old duplicate coId to masterId
           }
           return li;
         })
@@ -222,7 +212,7 @@ export default function App() {
     // Instantly modify state in memory
     setCos(prev => {
       const filtered = prev.filter(c => !duplicateIds.includes(c.id));
-      return filtered.map(c => c.id === master.id ? updatedMaster : c);
+      return filtered.map(c => c.id === masterId ? updatedMaster : c);
     });
     setPos(updatedPos);
   };
@@ -640,7 +630,7 @@ export default function App() {
             onEdit={(c) => setModal({ type: 'co', data: c })}
             onDelete={deleteCo}
             onNew={() => setModal({ type: 'co', data: null })}
-            onMergeOrders={handleMergeOrders}
+            onMergeSelectedOrders={handleMergeSelectedOrders}
           />
         )}
 
