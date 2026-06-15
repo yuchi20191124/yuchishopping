@@ -178,11 +178,6 @@ export default function ClientOrdersView({
                   isCompact ? 'p-2.5 sm:p-3' : 'p-4 sm:p-5'
                 }`}>
                   <div className="flex items-center gap-2.5 min-w-0">
-                    {!isCompact && (
-                      <div className="w-10 h-10 bg-[#EDE8DE] border border-[#BEB8AE] flex items-center justify-center rounded-xl font-bold text-sm text-[#3A72A0] shrink-0">
-                        {(c.customerIG || 'U').charAt(0).toUpperCase()}
-                      </div>
-                    )}
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <h4 className="font-bold text-base text-gray-900 truncate flex items-center gap-2">
@@ -372,4 +367,5 @@ export default function ClientOrdersView({
     </div>
   );
 }
+
 
