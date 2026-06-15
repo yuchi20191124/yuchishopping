@@ -23,7 +23,8 @@ import {
   PreOrder, 
   Shipment, 
   PackagingCost,
-  CoItem 
+  CoItem,
+  Customer
 } from './types';
 import { StorageService } from './lib/storage';
 
@@ -46,6 +47,7 @@ export default function App() {
   const [pos, setPos] = useState<PreOrder[]>([]);
   const [ships, setShips] = useState<Shipment[]>([]);
   const [pkgs, setPkgs] = useState<PackagingCost[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
 
   const [view, setView] = useState<string>('dashboard');
   const [modal, setModal] = useState<{ type: 'co' | 'po' | 'ship'; data: any | null } | null>(null);
@@ -66,7 +68,7 @@ export default function App() {
   // Load everything from unified storage service
   const loadAllData = async () => {
     try {
-      const [pChars, pSeries, pProducts, pCos, pPos, pShips, pPkgs] = await Promise.all([
+      const [pChars, pSeries, pProducts, pCos, pPos, pShips, pPkgs, pCustomers] = await Promise.all([
         StorageService.getChars().catch(e => {
           console.warn("Could not load chars from Cloud, trying local:", e);
           try {
@@ -115,6 +117,13 @@ export default function App() {
             const localVal = localStorage.getItem("of_pkgs");
             return localVal ? JSON.parse(localVal) : [];
           } catch (_) { return []; }
+        }),
+        StorageService.getCustomers().catch(e => {
+          console.warn("Could not load customers from Cloud, trying local:", e);
+          try {
+            const localVal = localStorage.getItem("of_customers");
+            return localVal ? JSON.parse(localVal) : [];
+          } catch (_) { return []; }
         })
       ]);
 
@@ -125,6 +134,7 @@ export default function App() {
       setPos(pPos);
       setShips(pShips);
       setPkgs(pPkgs);
+      setCustomers(pCustomers);
     } catch (e) {
       console.error("Failed to load local/cloud databases:", e);
     } finally {
@@ -227,6 +237,44 @@ export default function App() {
     };
 
     await StorageService.saveClientOrder(finalRecord);
+
+    // Auto-update or add customer block
+    const cleanIG = (finalRecord.customerIG || '').trim();
+    const cleanName = (finalRecord.customerName || '').trim();
+    
+    if (cleanIG || cleanName) {
+      // Find matching customer
+      const existingCustomer = customers.find(c => 
+        (cleanIG && c.customerIG.toLowerCase() === cleanIG.toLowerCase()) ||
+        (cleanName && c.name.toLowerCase() === cleanName.toLowerCase())
+      );
+
+      if (!existingCustomer) {
+        const newCust: Customer = {
+          id: 'cust_' + Math.random().toString(36).slice(2, 10),
+          name: cleanName || cleanIG,
+          customerIG: cleanIG || cleanName,
+          createdAt: new Date().toISOString()
+        };
+        await StorageService.saveCustomer(newCust);
+        setCustomers(prev => [...prev, newCust]);
+      } else {
+        let updated = false;
+        const updatedCust = { ...existingCustomer };
+        if (cleanName && existingCustomer.name !== cleanName) {
+          updatedCust.name = cleanName;
+          updated = true;
+        }
+        if (cleanIG && existingCustomer.customerIG !== cleanIG) {
+          updatedCust.customerIG = cleanIG;
+          updated = true;
+        }
+        if (updated) {
+          await StorageService.saveCustomer(updatedCust);
+          setCustomers(prev => prev.map(c => c.id === updatedCust.id ? updatedCust : c));
+        }
+      }
+    }
     
     // Direct in-memory state update for speed
     setCos(prev => prev.some(c => c.id === finalId)
@@ -611,6 +659,7 @@ export default function App() {
           <ShipmentView
             ships={ships}
             pos={pos}
+            cos={cos}
             onEdit={(s) => setModal({ type: 'ship', data: s })}
             onDelete={deleteShip}
             onNew={() => setModal({ type: 'ship', data: null })}
@@ -675,6 +724,7 @@ export default function App() {
           products={products}
           chars={chars}
           series={series}
+          customers={customers}
           expandProduct={expandProduct}
           onSave={saveCo}
           onClose={() => setModal(null)}
@@ -696,6 +746,7 @@ export default function App() {
           ship={modal.data}
           pos={pos}
           ships={ships}
+          cos={cos}
           onSave={saveShip}
           onClose={() => setModal(null)}
         />
