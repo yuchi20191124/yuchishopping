@@ -29,7 +29,7 @@ interface ClientOrdersViewProps {
   onEdit: (co: ClientOrder) => void;
   onDelete: (id: string) => void;
   onNew: () => void;
-  onMergeOrders?: (customerIG: string) => void;
+  onMergeSelectedOrders?: (masterId: string, duplicateIds: string[]) => Promise<void>;
 }
 
 export default function ClientOrdersView({
@@ -40,9 +40,14 @@ export default function ClientOrdersView({
   onEdit,
   onDelete,
   onNew,
-  onMergeOrders
+  onMergeSelectedOrders
 }: ClientOrdersViewProps) {
   const [search, setSearch] = useState('');
+  
+  // Merge candidates select states
+  const [mergeCustomerIG, setMergeCustomerIG] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [masterId, setMasterId] = useState<string>('');
   const [isCompact, setIsCompact] = useState(() => {
     return localStorage.getItem('of_cos_compact') === 'true';
   });
@@ -190,11 +195,16 @@ export default function ClientOrdersView({
                         </h4>
                         
                         {/* Duplicate order merging trigger badge */}
-                        {onMergeOrders && hasDuplicates && (
+                        {onMergeSelectedOrders && hasDuplicates && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              onMergeOrders(c.customerIG);
+                              const ig = (c.customerIG || '').trim();
+                              const targets = cos.filter(o => (o.customerIG || '').trim().toLowerCase() === ig.toLowerCase());
+                              const sorted = [...targets].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+                              setMergeCustomerIG(ig);
+                              setSelectedIds(sorted.map(s => s.id));
+                              setMasterId(sorted[0]?.id || '');
                             }}
                             className="px-2 py-0.5 text-[10px] font-bold bg-[#3A72A0] hover:bg-[#2e5d85] text-white rounded-lg transition-all cursor-pointer whitespace-nowrap active:scale-95 animate-pulse"
                             title="此客戶有其他重複訂單，點此將其全部合併（倂單）"
@@ -364,6 +374,204 @@ export default function ClientOrdersView({
           })
         )}
       </div>
+
+      {/* Dynamic Order Merging Dialogue Modal (Custom Multiselect Merge) */}
+      {mergeCustomerIG && (() => {
+        const candidates = cos.filter(
+          o => (o.customerIG || '').trim().toLowerCase() === mergeCustomerIG.trim().toLowerCase()
+        );
+
+        const handleToggleSelect = (id: string) => {
+          if (id === masterId) return; // Master must be included
+          setSelectedIds(prev => 
+            prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+          );
+        };
+
+        const handleSetMaster = (id: string) => {
+          setMasterId(id);
+          // Auto include masterId
+          setSelectedIds(prev => prev.includes(id) ? prev : [...prev, id]);
+        };
+
+        const handleExecuteMerge = async () => {
+          if (selectedIds.length < 2) return;
+          const duplicateIds = selectedIds.filter(id => id !== masterId);
+          if (duplicateIds.length === 0) return;
+
+          const numToMerge = selectedIds.length;
+          if (window.confirm(`確定要將選取的 ${numToMerge} 筆訂單合併為 1 筆嗎？\n合併後其餘 ${duplicateIds.length} 筆原始託代單檔案將被永久刪除！`)) {
+            try {
+              await onMergeSelectedOrders?.(masterId, duplicateIds);
+              setMergeCustomerIG(null);
+            } catch (err) {
+              alert('合併訂單失敗，請重試！');
+            }
+          }
+        };
+
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-[2px] z-[100] flex items-center justify-center p-4">
+            <div className="bg-white border-4 border-[#1E1E1E] rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+              {/* Header */}
+              <div className="bg-[#FFFCF7] border-b border-[#BEB8AE]/60 p-4 shrink-0 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🔗</span>
+                  <div>
+                    <h3 className="font-sans font-extrabold text-base text-gray-900 tracking-tight">
+                      客戶 @{mergeCustomerIG} 專屬倂單/合併管理
+                    </h3>
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      選擇多個待合併的訂單，指定一筆為「主存檔」，點選執行將整併商品明細。
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setMergeCustomerIG(null)}
+                  className="w-8 h-8 rounded-full border border-gray-150 hover:bg-gray-100 flex items-center justify-center text-gray-500 font-bold active:scale-95 transition-all text-xs cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Candidates selection area */}
+              <div className="p-4 overflow-y-auto space-y-3 flex-1 bg-gray-50 text-xs text-gray-850">
+                {candidates.map(o => {
+                  const isChecked = selectedIds.includes(o.id);
+                  const isMaster = masterId === o.id;
+                  const orderTotal = (o.items || []).reduce(
+                    (sum, item) => sum + (parseFloat(item.price) * (item.qty || 1) || 0), 
+                    0
+                  );
+
+                  return (
+                    <div
+                      key={o.id}
+                      onClick={() => handleToggleSelect(o.id)}
+                      className={`p-3.5 border-2 rounded-xl transition-all cursor-pointer flex flex-col sm:flex-row sm:items-start justify-between gap-3 text-xs ${
+                        isMaster 
+                          ? 'bg-[#3A72A0]/5 border-[#3A72A0] shadow-xs' 
+                          : isChecked 
+                            ? 'bg-[#FFFCF7] border-gray-500 text-gray-900 font-semibold' 
+                            : 'bg-white border-gray-150 text-gray-400 hover:bg-gray-100'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        {/* Selector checkbox */}
+                        <div className="mt-1 flex items-center shrink-0">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {}} // handled by div click
+                            disabled={isMaster}
+                            className="w-4 h-4 rounded text-[#3A72A0] cursor-pointer"
+                          />
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-extrabold text-[#1E1E1E]">
+                              📅 {new Date(o.createdAt).toLocaleDateString()}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                              o.clientOrdered 
+                                ? 'bg-emerald-50 text-emerald-850 border-emerald-250' 
+                                : 'bg-amber-50 text-amber-850 border-[#BEB8AE]'
+                            }`}>
+                              {o.clientOrdered ? '已收單/款' : '待客人下單'}
+                            </span>
+                            {isMaster && (
+                              <span className="bg-[#3A72A0] text-white text-[10px] font-bold px-2 py-0.5 rounded-lg shrink-0">
+                                👑 主存檔
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Sub items info list */}
+                          <div className="mt-2 pl-3 border-l-2 border-gray-200 space-y-1 text-gray-700">
+                            {(o.items || []).map((item) => (
+                              <div key={item.id} className="text-[11px] flex items-center gap-1.5 flex-wrap font-medium">
+                                <span className="font-bold text-gray-900">
+                                  {[item.series, item.spec, item.character].filter(Boolean).join(' · ')}
+                                </span>
+                                <span className="text-gray-400 font-bold">× {item.qty || 1}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right-side action: Button to prioritize as master, and show total price */}
+                      <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-2 shrink-0 self-stretch border-t sm:border-t-0 pt-2 sm:pt-0 border-gray-100">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSetMaster(o.id);
+                          }}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-bold transition-all cursor-pointer select-none active:scale-95 ${
+                            isMaster 
+                              ? 'bg-[#3A72A0] text-white border-[#3A72A0]' 
+                              : 'bg-white hover:bg-gray-100 text-gray-700 border-gray-300'
+                          }`}
+                          title="將此單設定為合併後的目標主頁面"
+                        >
+                          <input
+                            type="radio"
+                            checked={isMaster}
+                            readOnly
+                            className="w-3.5 h-3.5 cursor-pointer pointer-events-none"
+                          />
+                          <span>設為主存檔</span>
+                        </button>
+
+                        <div className="text-right">
+                          <span className="text-[10px] text-gray-400 font-mono">合計金額</span>
+                          <div className="text-sm font-bold text-[#3A72A0] font-mono leading-none mt-0.5">
+                            ${orderTotal.toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Warning label & Actions */}
+              <div className="bg-[#ede8de]/40 border-t border-[#BEB8AE]/60 p-4 space-y-3 shrink-0">
+                <div className="text-[11px] text-[#A06A3A] bg-[#A06A3A]/10 border border-[#A06A3A]/20 rounded-xl p-3 leading-normal flex items-start gap-2 font-medium">
+                  <span className="text-sm shrink-0">⚠️</span>
+                  <span>
+                    <b>合併規則說明</b>：被合併的其他訂單將會被刪除，其內的所有單品項目、相關聯的海外採購單 PreOrder 綁定都會被轉移並集中到<b>主存檔</b>中。
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 text-xs w-full">
+                  <div className="text-gray-500 font-bold">
+                    已選取 <span className="text-[#3A72A0] font-mono font-extrabold text-sm">{selectedIds.length}</span> / {candidates.length} 筆
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setMergeCustomerIG(null)}
+                      className="px-4 py-2 bg-white hover:bg-gray-100 border border-[#BEB8AE] font-bold text-gray-700 rounded-xl cursor-pointer active:scale-95 transition-all text-sm h-11"
+                    >
+                      取消
+                    </button>
+                    <button
+                      onClick={handleExecuteMerge}
+                      disabled={selectedIds.length < 2}
+                      className="px-5 py-2 bg-[#3A72A0] hover:bg-[#2e5d85] disabled:bg-gray-200 disabled:text-gray-400 disabled:border-transparent disabled:cursor-not-allowed border-0 font-bold text-white rounded-xl shadow-sm cursor-pointer active:scale-95 transition-all text-sm h-11"
+                    >
+                      確認並執行併單({selectedIds.length}筆)
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
