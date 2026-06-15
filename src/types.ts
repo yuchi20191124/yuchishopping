@@ -36,9 +36,19 @@ export interface CoItem {
 export interface ClientOrder {
   id: string;
   customerIG: string;
+  customerName?: string;
   clientOrdered: boolean;
   items: CoItem[];
   notes: string;
+  createdAt: string;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  customerIG: string;
+  phone?: string;
+  notes?: string;
   createdAt: string;
 }
 
@@ -70,3 +80,4 @@ export interface PackagingCost {
   notes: string;
   createdAt: string;
 }
+
