@@ -73,6 +73,7 @@ export default function ClientOrdersView({
       (c) =>
         !search ||
         c.customerIG?.toLowerCase().includes(search.toLowerCase()) ||
+        c.customerName?.toLowerCase().includes(search.toLowerCase()) ||
         c.items.some(
           (i) =>
             i.series?.toLowerCase().includes(search.toLowerCase()) ||
@@ -184,8 +185,13 @@ export default function ClientOrdersView({
                     )}
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <h4 className="font-bold text-base text-gray-900 truncate">
-                          @{c.customerIG || '未命名'}
+                        <h4 className="font-bold text-base text-gray-900 truncate flex items-center gap-2">
+                          {c.customerName && (
+                            <span className="text-[#3A72A0] bg-[#3A72A0]/10 px-2.5 py-0.5 rounded-lg text-xs font-bold leading-normal border border-[#3A72A0]/15 shrink-0 block">
+                              👤 {c.customerName}
+                            </span>
+                          )}
+                          <span className="text-gray-600 font-semibold font-mono">@{c.customerIG || '未命名'}</span>
                         </h4>
                         
                         {/* Duplicate order merging trigger badge */}
@@ -366,3 +372,4 @@ export default function ClientOrdersView({
     </div>
   );
 }
+
