@@ -55,6 +55,29 @@ interface ClientOrdersViewProps {
   series?: Series[];
 }
 
+// Levenshtein edit distance utility for customer name alignment checks
+function getEditDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const d = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) d[i][0] = i;
+  for (let j = 0; j <= n; j++) d[0][j] = j;
+
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(
+        d[i - 1][j] + 1, // deletion
+        d[i][j - 1] + 1, // insertion
+        d[i - 1][j - 1] + cost // substitution
+      );
+    }
+  }
+  return d[m][n];
+}
+
 export default function ClientOrdersView({
   cos,
   pos,
@@ -1008,35 +1031,87 @@ export default function ClientOrdersView({
                         const custObj = customers.find(c => c.customerIG?.trim().toLowerCase() === trimmedIg.toLowerCase());
                         if (custObj) {
                           return (
-                            <div className="mt-1.5 text-[10px] text-emerald-700 font-bold flex flex-wrap items-center gap-1 bg-emerald-50/70 px-1.5 py-0.5 rounded border border-emerald-200/50">
-                              <span>✅ 主檔: {custObj.name}</span>
+                            <div className="mt-1.5 text-[10px] text-emerald-700 font-bold flex flex-wrap items-center gap-1 bg-emerald-50/70 px-1.5 py-0.5 rounded border border-emerald-200/50 animate-fadeIn">
+                              <span>✅ 已在庫: {custObj.name}</span>
                               {custObj.vipLevel === 'VIP' && <span className="bg-amber-100 text-amber-800 text-[8px] px-1 rounded font-extrabold scale-90">🌟 VIP</span>}
                               {custObj.vipLevel === 'Blacklist' && <span className="bg-red-100 text-red-800 text-[8px] px-1 rounded font-extrabold scale-90">⚠️ 黑名單</span>}
                             </div>
                           );
                         } else {
+                          const lowerTrimmed = trimmedIg.toLowerCase();
+                          const suggestions = lowerTrimmed ? customers.filter(c => {
+                            const cIg = (c.customerIG || '').trim().toLowerCase();
+                            const cName = (c.name || '').trim().toLowerCase();
+                            if (cIg === lowerTrimmed) return false;
+                            
+                            // 1. Substring matches
+                            if (cIg.includes(lowerTrimmed) || lowerTrimmed.includes(cIg)) return true;
+                            if (cName.includes(lowerTrimmed) || lowerTrimmed.includes(cName)) return true;
+                            
+                            // 2. Levenshtein edit distance check (allows spelling errors of up to 2 characters)
+                            if (lowerTrimmed.length >= 2) {
+                              const distIg = getEditDistance(lowerTrimmed, cIg);
+                              const distName = getEditDistance(lowerTrimmed, cName);
+                              if (distIg <= 2 || distName <= 2) return true;
+                            }
+                            return false;
+                          }).slice(0, 3) : [];
+
                           return (
-                            <div className="mt-1.5 text-[10px] text-amber-700 font-medium flex flex-wrap items-center justify-between gap-1 bg-amber-50/50 px-1.5 py-0.5 rounded border border-amber-200/40">
-                              <span>⚠️ 尚未建立主檔</span>
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  if (!trimmedIg) return;
-                                  const newId = 'cust_' + Math.random().toString(36).slice(2, 10);
-                                  const newCust = {
-                                    id: newId,
-                                    name: trimmedIg,
-                                    customerIG: trimmedIg,
-                                    vipLevel: 'New' as const,
-                                    createdAt: new Date().toISOString()
-                                  };
-                                  await onSaveCustomer(newCust);
-                                }}
-                                className="text-[9px] bg-amber-600/10 hover:bg-amber-600 text-amber-800 hover:text-white px-1.5 py-0.2 rounded font-extrabold transition-all active:scale-95 cursor-pointer border border-amber-600/20"
-                                title="一鍵將此 IG 帳號快速建立於顧客主資料庫中"
-                              >
-                                快速建立顧客 ➕
-                              </button>
+                            <div className="mt-1.5 space-y-1.5">
+                              <div className="text-[10px] text-amber-700 font-bold flex items-center gap-1 bg-amber-50/70 px-1.5 py-0.5 rounded border border-amber-200/50">
+                                <span>⚠️ 此買家帳號目前不在在庫名單中</span>
+                              </div>
+
+                              {suggestions.length > 0 && (
+                                <div className="p-1.5 bg-[#EDE8DE]/40 border border-[#BEB8AE]/40 rounded-lg space-y-1 animate-fadeIn">
+                                  <div className="text-[9px] text-[#3A72A0] font-extrabold flex items-center gap-0.5">
+                                    <span>🔍 您是否指的是以下現有顧客？</span>
+                                  </div>
+                                  <div className="flex flex-col gap-1">
+                                    {suggestions.map(sug => (
+                                      <button
+                                        type="button"
+                                        key={sug.id}
+                                        onClick={() => {
+                                          handleUpdateDraft(draft.id, 'customerIG', sug.customerIG);
+                                          handleUpdateDraft(draft.id, 'customerName', sug.name);
+                                        }}
+                                        className="text-left w-full px-1.5 py-1 hover:bg-[#3A72A0]/10 text-[10px] text-gray-800 font-bold hover:text-[#3A72A0] rounded-md transition-all cursor-pointer flex items-center justify-between border border-transparent hover:border-[#3A72A0]/20 bg-white shadow-3xs"
+                                        title={`點擊套用：${sug.name}`}
+                                      >
+                                        <span className="font-mono text-amber-900">@{sug.customerIG}</span>
+                                        <span className="text-gray-500 font-sans text-[9px] font-bold">({sug.name}) ✔ 點此套用</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="flex items-center justify-between gap-1 pt-0.5">
+                                <span className="text-[9.5px] text-gray-400 font-medium font-sans">
+                                  {suggestions.length > 0 ? '都不是？再點此：' : '確非現有用戶：'}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (!trimmedIg) return;
+                                    const newId = 'cust_' + Math.random().toString(36).slice(2, 10);
+                                    const newCust = {
+                                      id: newId,
+                                      name: trimmedIg,
+                                      customerIG: trimmedIg,
+                                      vipLevel: 'New' as const,
+                                      createdAt: new Date().toISOString()
+                                    };
+                                    await onSaveCustomer(newCust);
+                                  }}
+                                  className="text-[9px] bg-amber-600/10 hover:bg-amber-600 text-amber-800 hover:text-white px-1.5 py-0.5 rounded font-extrabold transition-all active:scale-95 cursor-pointer border border-amber-600/20"
+                                  title="一鍵將此 IG 帳號快速建立於顧客主資料庫中"
+                                >
+                                  快速建立顧客 ➕
+                                </button>
+                              </div>
                             </div>
                           );
                         }
@@ -1769,3 +1844,4 @@ export default function ClientOrdersView({
     </div>
   );
 }
+
