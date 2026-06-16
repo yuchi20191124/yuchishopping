@@ -149,7 +149,7 @@ export default function ClientOrdersView({
      ⚡ POINT 1: ONE-CLICK BULK TEXT PARSER ENGINE
      ═════════════════════════════════════════════════ */
   const [rawText, setRawText] = useState(
-    `@amy_lucky 吉伊卡哇兔兔吊飾 A款 +1 $350\n@sherry_toy 蠟筆小新睡衣公仔 x2 $180\n@yuchi_shop 櫻桃小丸子馬克杯 +1 $250`
+    `@amy_lucky\n吉伊卡哇兔兔 A款 +1 $350\n吉伊卡哇兔兔 B款 +1 $350\n\n@sherry_toy\n蠟筆小新睡衣公仔 x2 $180`
   );
   const [parsedDrafts, setParsedDrafts] = useState<any[]>([]);
   const [parserSuccessMsg, setParserSuccessMsg] = useState<string | null>(null);
@@ -181,25 +181,31 @@ export default function ClientOrdersView({
   };
 
   const executeParsing = () => {
-    const lines = rawText.split('\n').filter(l => l.trim().length > 0);
+    const lines = rawText.split('\n');
     const drafts: any[] = [];
+    let currentIG = 'temp_buyer';
 
     lines.forEach((line, index) => {
-      // Find Instagram account beginning with @ or first word
-      const userMatch = line.match(/@([a-zA-Z0-9_\u4e00-\u9fa5]+)/) || line.match(/^([a-zA-Z0-9_\u4e00-\u9fa5]+)\s*[:：]/);
-      let ig = 'temp_buyer';
-      let restOfLine = line;
+      const trimmed = line.trim();
+      if (!trimmed) return;
 
-      if (userMatch) {
-        ig = userMatch[1];
-        restOfLine = line.replace(userMatch[0], '').trim();
-      } else {
-        const parts = line.trim().split(/\s+/);
-        if (parts.length > 1 && !parts[0].includes('+') && !parts[0].includes('x') && isNaN(Number(parts[0]))) {
-          ig = parts[0];
-          restOfLine = parts.slice(1).join(' ');
-        }
+      // 1. Check if the line is purely a standalone user header, e.g. "@amy_lucky" or "amy_lucky:"
+      const standaloneUserMatch = trimmed.match(/^@([a-zA-Z0-9_\u4e00-\u9fa5]+)\s*$/) || trimmed.match(/^([a-zA-Z0-9_\u4e00-\u9fa5]+)\s*[:：]\s*$/);
+      if (standaloneUserMatch) {
+        currentIG = standaloneUserMatch[1];
+        return; // Transition context and move to the next line
       }
+
+      // 2. Check if the line contains an inline user handle like "@amy_lucky item info..."
+      const inlineUserMatch = trimmed.match(/@([a-zA-Z0-9_\u4e00-\u9fa5]+)/);
+      let restOfLine = trimmed;
+      if (inlineUserMatch) {
+        currentIG = inlineUserMatch[1];
+        restOfLine = trimmed.replace(inlineUserMatch[0], '').trim();
+      }
+
+      // If the item text becomes empty, skip adding a draft
+      if (!restOfLine) return;
 
       // Quantity pattern (e.g. +1, x2, *1, 1個)
       const qtyMatch = restOfLine.match(/[\+x\*]\s*(\d+)/) || restOfLine.match(/(\d+)\s*(個|支|套|雙)/);
@@ -243,8 +249,8 @@ export default function ClientOrdersView({
 
       drafts.push({
         id: 'draft_' + index + '_' + Math.random().toString(36).substring(2, 6),
-        customerIG: ig,
-        customerName: ig,
+        customerIG: currentIG,
+        customerName: currentIG,
         seriesName: matchedSeriesName || '代購手動輸入',
         characterName: matchedCharName || '常態規格',
         spec: finalSpec || '代購周邊明細',
@@ -285,35 +291,48 @@ export default function ClientOrdersView({
   const handleSaveAllParsedDrafts = async () => {
     if (parsedDrafts.length === 0) return;
     try {
-      for (const draft of parsedDrafts) {
+      // Group drafts by customerIG to create ONE ClientOrder per buyer
+      const groups = new Map<string, any[]>();
+      parsedDrafts.forEach(draft => {
+        const key = draft.customerIG.trim().toLowerCase();
+        if (!groups.has(key)) {
+          groups.set(key, []);
+        }
+        groups.get(key)!.push(draft);
+      });
+
+      let orderCount = 0;
+      for (const [igKey, itemsList] of groups.entries()) {
+        const firstDraft = itemsList[0];
+        const draftItems: CoItem[] = itemsList.map(item => ({
+          id: 'coitem_' + Math.random().toString(36).slice(2, 10),
+          productId: item.matchedProductId || '',
+          series: item.seriesName,
+          character: item.characterName,
+          spec: item.spec,
+          qty: item.qty,
+          price: item.price,
+          status: 'pending',
+          poId: ''
+        }));
+
         const orderRecord: ClientOrder = {
           id: 'co_' + Math.random().toString(36).slice(2, 10),
-          customerIG: draft.customerIG.trim().replace(/^@/, '') || 'anonymous',
-          customerName: draft.customerName.trim() || draft.customerIG,
+          customerIG: firstDraft.customerIG.trim().replace(/^@/, '') || 'anonymous',
+          customerName: firstDraft.customerName.trim() || firstDraft.customerIG,
           clientOrdered: false,
-          notes: '⚡ 快速代購文字智慧解析。',
+          notes: '',
           createdAt: new Date().toISOString(),
-          items: [
-            {
-              id: 'coitem_' + Math.random().toString(36).slice(2, 10),
-              productId: draft.matchedProductId || '',
-              series: draft.seriesName,
-              character: draft.characterName,
-              spec: draft.spec,
-              qty: draft.qty,
-              price: draft.price,
-              status: 'pending',
-              poId: ''
-            }
-          ]
+          items: draftItems
         };
 
         if (onSaveCo) {
           await onSaveCo(orderRecord);
         }
+        orderCount++;
       }
 
-      setParserSuccessMsg(`🎉 成功登記 ${parsedDrafts.length} 筆下單代購託運訂單！已自動寫入資料庫與緩存中。`);
+      setParserSuccessMsg(`🎉 成功登記 ${orderCount} 位顧客之合併下單代購託運！共 ${parsedDrafts.length} 筆商品。`);
       setParsedDrafts([]);
       setRawText('');
       // Auto transition back to orders view to see new items
@@ -340,9 +359,29 @@ export default function ClientOrdersView({
   const [newWishPrice, setNewWishPrice] = useState('');
   const [newWishNotes, setNewWishNotes] = useState('');
 
-  // Sort and statistics calculator for Customers
+  // Sort and statistics calculator for Customers - ensuring deduplicated records
   const customerStats = useMemo(() => {
-    return customers.map(cust => {
+    const uniqueMap = new Map<string, Customer>();
+    customers.forEach(cust => {
+      if (!cust) return;
+      const key = (cust.customerIG || '').trim().toLowerCase() || (cust.name || '').trim().toLowerCase();
+      if (!key) return;
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, cust);
+      } else {
+        // Merge them - keep the one with more information/higher completeness
+        const existing = uniqueMap.get(key)!;
+        const score = (cust.phone ? 2 : 0) + (cust.notes ? 1 : 0) + (cust.vipLevel && cust.vipLevel !== 'New' ? 2 : 0) + (cust.wishes?.length ? cust.wishes.length : 0);
+        const existingScore = (existing.phone ? 2 : 0) + (existing.notes ? 1 : 0) + (existing.vipLevel && existing.vipLevel !== 'New' ? 2 : 0) + (existing.wishes?.length ? existing.wishes.length : 0);
+        if (score > existingScore) {
+          uniqueMap.set(key, cust);
+        }
+      }
+    });
+
+    const uniqueCustomers = Array.from(uniqueMap.values());
+
+    return uniqueCustomers.map(cust => {
       const orders = cos.filter(order => {
         const oIG = (order.customerIG || '').trim().toLowerCase();
         const oName = (order.customerName || '').trim().toLowerCase();
@@ -564,7 +603,7 @@ export default function ClientOrdersView({
           <User className="w-4 h-4" />
           <span>👥 顧客主檔與 VIP 標籤</span>
           <span className="bg-black/10 text-[9px] px-2 py-0.5 rounded-full font-mono font-extrabold">
-            {customers.length}
+            {customerStats.length}
           </span>
         </button>
       </div>
@@ -1063,7 +1102,7 @@ export default function ClientOrdersView({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h2 className="font-serif font-black text-lg text-gray-950 tracking-tight">
-                    大聯盟商務客戶主檔 (Customer Master Registry)
+                    客戶資料維護 (Customer Master Registry)
                   </h2>
                   <p className="text-gray-400 text-[10px] mt-0.5">
                     用於整合對帳、手機號碼備註、標記 VIP 特權與黑名單。
@@ -1671,4 +1710,3 @@ export default function ClientOrdersView({
     </div>
   );
 }
-
