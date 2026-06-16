@@ -13,7 +13,9 @@ import {
   Tag, 
   User, 
   Layers, 
-  FileText 
+  FileText,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { Character, Series, Product } from '../types';
 
@@ -404,6 +406,15 @@ function ProductsEditor({ chars, series, products, onSave, expandProduct }: Prod
     price: ''
   });
 
+  const [collapsedSeries, setCollapsedSeries] = useState<Record<string, boolean>>({});
+
+  const toggleSeriesCollapse = (sId: string) => {
+    setCollapsedSeries(prev => ({
+      ...prev,
+      [sId]: !prev[sId]
+    }));
+  };
+
   const handleCancel = () => {
     setMode(null);
     setSingleForm({ seriesId: '', characterId: '', spec: '', price: '' });
@@ -491,6 +502,44 @@ function ProductsEditor({ chars, series, products, onSave, expandProduct }: Prod
       );
     });
   }, [products, chars, series, search]);
+
+  const groupedProducts = useMemo(() => {
+    const groups: { seriesId: string; seriesName: string; products: Product[] }[] = [];
+    const map = new Map<string, Product[]>();
+    
+    filteredProducts.forEach(p => {
+      const sId = p.seriesId || 'unknown_series';
+      if (!map.has(sId)) {
+        map.set(sId, []);
+      }
+      map.get(sId)!.push(p);
+    });
+
+    map.forEach((prods, sId) => {
+      const serObj = series.find(s => s.id === sId);
+      const name = serObj ? serObj.name : '常態商品 / 其他無系列';
+      groups.push({
+        seriesId: sId,
+        seriesName: name,
+        products: prods
+      });
+    });
+
+    // Sort groups alphabetically by series Name
+    return groups.sort((a, b) => a.seriesName.localeCompare(b.seriesName, 'zh-Hant'));
+  }, [filteredProducts, series]);
+
+  const expandAll = () => {
+    setCollapsedSeries({});
+  };
+
+  const collapseAll = () => {
+    const closed: Record<string, boolean> = {};
+    groupedProducts.forEach(g => {
+      closed[g.seriesId] = true;
+    });
+    setCollapsedSeries(closed);
+  };
 
   const previewCount = comboForm.seriesIds.length * (comboForm.charIds.length || 1);
 
@@ -745,54 +794,116 @@ function ProductsEditor({ chars, series, products, onSave, expandProduct }: Prod
             <span>找不到符合條件的商品</span>
           </div>
         ) : (
-          <div className="divide-y divide-gray-100 divide-pink-100/10">
-            {filteredProducts.map((p) => {
-              const serObj = series.find(s => s.id === p.seriesId);
-              const charObj = chars.find(c => c.id === p.characterId);
-
-              return (
-                <div key={p.id} className="p-3.5 flex items-center justify-between gap-4 hover:bg-[#EDE8DE]/15 transition-colors">
-                  <div className="min-w-0 pr-2">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="font-bold text-xs text-[#3A72A0] bg-[#3A72A0]/5 px-2 py-0.5 rounded border border-[#3A72A0]/10 shrink-0">
-                        {serObj?.name || '未知系列'}
-                      </span>
-                      {p.spec && (
-                        <span className="text-gray-800 font-semibold text-xs py-0.5 px-1 bg-gray-50 border border-gray-100 rounded">
-                          {p.spec}
-                        </span>
-                      )}
-                      {charObj?.name && (
-                        <span className="text-amber-800 font-bold text-xs py-0.5 px-2 bg-amber-50 border border-amber-100 rounded">
-                          {charObj.name}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 shrink-0">
-                    <div className="text-right">
-                      <span className="text-xs text-gray-400 font-sans block text-[9px] uppercase tracking-wider">預設售價</span>
-                      <span className="font-sans font-bold text-[#3A72A0] text-sm">
-                        ${p.price ? parseFloat(p.price).toLocaleString() : '—'}
-                      </span>
-                    </div>
-
-                    <button
-                      onClick={() => handleDeleteProduct(p.id)}
-                      className="p-2 hover:bg-rose-50 text-rose-500 rounded-lg active:scale-95 transition-all cursor-pointer min-w-[34px] flex items-center justify-center border border-transparent hover:border-rose-100"
-                      title="刪除此品項"
-                      id={`btn-delete-product-${p.id}`}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+          <div>
+            {/* Quick Bulk Expand/Collapse Actions */}
+            <div className="p-3 bg-gray-50/50 border-b border-gray-100 flex items-center justify-between text-[11px] text-gray-500">
+              <span className="font-sans">
+                共 {groupedProducts.length} 個商品系列，共已建立 {filteredProducts.length} 筆商品規格
+              </span>
+              {!search.trim() && (
+                <div className="flex gap-2.5">
+                  <button
+                    onClick={expandAll}
+                    className="hover:text-[#3A72A0] font-semibold cursor-pointer active:scale-95 transition-all text-[11px]"
+                  >
+                    全部展開
+                  </button>
+                  <span>|</span>
+                  <button
+                    onClick={collapseAll}
+                    className="hover:text-[#3A72A0] font-semibold cursor-pointer active:scale-95 transition-all text-[11px]"
+                  >
+                    全部收合
+                  </button>
                 </div>
-              );
-            })}
+              )}
+              {search.trim() && (
+                <span className="text-[#3A72A0] font-medium">
+                  🔍 已為您自動展開所有搜尋結果
+                </span>
+              )}
+            </div>
+
+            <div className="divide-y divide-gray-200/60">
+              {groupedProducts.map((group) => {
+                const isCollapsed = !search.trim() && !!collapsedSeries[group.seriesId];
+                return (
+                  <div key={group.seriesId} className="flex flex-col">
+                    {/* Collapsible Series Header Group */}
+                    <div
+                      onClick={() => toggleSeriesCollapse(group.seriesId)}
+                      className="bg-gray-50/60 hover:bg-[#EDE8DE]/30 px-4 py-3 flex items-center justify-between cursor-pointer select-none border-b border-gray-200/20 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        {isCollapsed ? (
+                          <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+                        ) : (
+                          <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
+                        )}
+                        <span className="font-bold text-xs text-[#3A72A0] tracking-wide">
+                          {group.seriesName}
+                        </span>
+                        <span className="bg-[#3A72A0]/10 text-[#3A72A0] text-[9px] px-2 py-0.5 rounded-full font-mono font-bold">
+                          {group.products.length} 筆
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-gray-400 font-medium font-sans">
+                        {isCollapsed ? '點擊展開 ⬇' : '點擊收合 ⬆'}
+                      </span>
+                    </div>
+
+                    {/* Products belonging to this series group */}
+                    {!isCollapsed && (
+                      <div className="divide-y divide-gray-100 bg-white">
+                        {group.products.map((p) => {
+                          const charObj = chars.find(c => c.id === p.characterId);
+                          return (
+                            <div key={p.id} className="p-3.5 px-6 flex items-center justify-between gap-4 hover:bg-[#EDE8DE]/10 transition-colors">
+                              <div className="min-w-0 pr-2">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {p.spec && (
+                                    <span className="text-gray-800 font-semibold text-xs py-0.5 px-2 bg-gray-50 border border-gray-100 rounded">
+                                      {p.spec}
+                                    </span>
+                                  )}
+                                  {charObj?.name && (
+                                    <span className="text-amber-800 font-bold text-xs py-0.5 px-2 bg-amber-50 border border-amber-100 rounded">
+                                      {charObj.name}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-3 shrink-0">
+                                <div className="text-right">
+                                  <span className="text-xs text-gray-400 font-sans block text-[9px] uppercase tracking-wider">預設售價</span>
+                                  <span className="font-sans font-bold text-[#3A72A0] text-sm">
+                                    ${p.price ? parseFloat(p.price).toLocaleString() : '—'}
+                                  </span>
+                                </div>
+
+                                <button
+                                  onClick={() => handleDeleteProduct(p.id)}
+                                  className="p-2 hover:bg-rose-50 text-rose-500 rounded-lg active:scale-95 transition-all cursor-pointer min-w-[34px] flex items-center justify-center border border-transparent hover:border-rose-100"
+                                  title="刪除此品項"
+                                  id={`btn-delete-product-${p.id}`}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
     </div>
   );
 }
+
