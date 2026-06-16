@@ -134,7 +134,22 @@ export default function App() {
       setPos(pPos);
       setShips(pShips);
       setPkgs(pPkgs);
-      setCustomers(pCustomers);
+
+      // Deduplicate customers on application load to ensure absolute sanity
+      const dedupedCusts: Customer[] = [];
+      const seenCustKeys = new Set<string>();
+      if (Array.isArray(pCustomers)) {
+        pCustomers.forEach(c => {
+          if (!c) return;
+          const key = (c.customerIG || '').trim().toLowerCase() || (c.name || '').trim().toLowerCase();
+          if (!key) return;
+          if (!seenCustKeys.has(key)) {
+            seenCustKeys.add(key);
+            dedupedCusts.push(c);
+          }
+        });
+      }
+      setCustomers(dedupedCusts);
     } catch (e) {
       console.error("Failed to load local/cloud databases:", e);
     } finally {
@@ -340,17 +355,55 @@ export default function App() {
   };
 
   const handleSaveCustomer = async (cust: Customer) => {
-    const finalId = cust.id || 'cust_' + Math.random().toString(36).slice(2, 10);
-    const finalRecord: Customer = {
-      ...cust,
-      id: finalId,
-      createdAt: cust.createdAt || new Date().toISOString()
-    };
+    const normalizedIG = (cust.customerIG || '').trim().toLowerCase();
+    const normalizedName = (cust.name || '').trim().toLowerCase();
+
+    // Check if another customer already exists with the same IG or Name
+    const duplicate = customers.find(c => 
+      c.id !== cust.id && (
+        (normalizedIG && (c.customerIG || '').trim().toLowerCase() === normalizedIG) ||
+        (normalizedName && (c.name || '').trim().toLowerCase() === normalizedName)
+      )
+    );
+
+    let finalId = cust.id;
+    let finalRecord = { ...cust };
+
+    if (duplicate) {
+      finalId = duplicate.id;
+      finalRecord = {
+        ...duplicate,
+        ...cust,
+        id: finalId,
+        wishes: [
+          ...(duplicate.wishes || []),
+          ...(cust.wishes || []).filter(w => !(duplicate.wishes || []).some(dw => dw.id === w.id))
+        ]
+      };
+    } else if (!finalId) {
+      finalId = 'cust_' + Math.random().toString(36).slice(2, 10);
+      finalRecord.id = finalId;
+    }
+
+    finalRecord.createdAt = finalRecord.createdAt || new Date().toISOString();
 
     // 1. Instantly update customer state
     setCustomers(prev => {
       const exists = prev.some(c => c.id === finalId);
-      return exists ? prev.map(c => c.id === finalId ? finalRecord : c) : [...prev, finalRecord];
+      const updated = exists ? prev.map(c => c.id === finalId ? finalRecord : c) : [...prev, finalRecord];
+      
+      // Deduplicate to be absolutely safe
+      const deduped: Customer[] = [];
+      const seen = new Set<string>();
+      updated.forEach(c => {
+        const k = (c.customerIG || '').trim().toLowerCase() || (c.name || '').trim().toLowerCase();
+        if (!k) return;
+        if (!seen.has(k)) {
+          seen.add(k);
+          deduped.push(c);
+        }
+      });
+      return deduped;
     });
 
     // 2. Cascade rename matching orders
