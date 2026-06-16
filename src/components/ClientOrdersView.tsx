@@ -264,7 +264,25 @@ export default function ClientOrdersView({
   };
 
   const handleUpdateDraft = (id: string, key: string, value: any) => {
-    setParsedDrafts(prev => prev.map(d => d.id === id ? { ...d, [key]: value } : d));
+    setParsedDrafts(prev => prev.map(d => {
+      if (d.id === id) {
+        let updated = { ...d, [key]: value };
+        if (key === 'spec') {
+          const matchedProd = matchSpecification(value);
+          if (matchedProd) {
+            updated.matchedProductId = matchedProd.id;
+            updated.seriesName = series.find(s => s.id === matchedProd.seriesId)?.name || '代購手動輸入';
+            updated.characterName = chars.find(c => c.id === matchedProd.characterId)?.name || '常態規格';
+            updated.spec = matchedProd.spec || value;
+            if (!updated.price || updated.price === '100' || updated.price.trim() === '') {
+              updated.price = matchedProd.price || '';
+            }
+          }
+        }
+        return updated;
+      }
+      return d;
+    }));
   };
 
   const handleAddDraftRow = () => {
@@ -316,10 +334,13 @@ export default function ClientOrdersView({
           poId: ''
         }));
 
+        const registryCust = customers.find(c => c.customerIG?.trim().toLowerCase() === igKey.toLowerCase() || c.customerIG?.trim().toLowerCase() === firstDraft.customerIG.trim().toLowerCase());
+        const customerRealName = registryCust ? registryCust.name : (firstDraft.customerName.trim() || firstDraft.customerIG);
+
         const orderRecord: ClientOrder = {
           id: 'co_' + Math.random().toString(36).slice(2, 10),
           customerIG: firstDraft.customerIG.trim().replace(/^@/, '') || 'anonymous',
-          customerName: firstDraft.customerName.trim() || firstDraft.customerIG,
+          customerName: customerRealName || firstDraft.customerIG,
           clientOrdered: false,
           notes: '',
           createdAt: new Date().toISOString(),
@@ -982,6 +1003,44 @@ export default function ClientOrdersView({
                         className="w-full px-2 py-1.5 h-8 border border-[#BEB8AE] focus:border-[#3A72A0] rounded-lg bg-white text-xs font-semibold"
                         placeholder="買家帳號"
                       />
+                      {(() => {
+                        const trimmedIg = (draft.customerIG || '').trim().replace(/^@/, '');
+                        const custObj = customers.find(c => c.customerIG?.trim().toLowerCase() === trimmedIg.toLowerCase());
+                        if (custObj) {
+                          return (
+                            <div className="mt-1.5 text-[10px] text-emerald-700 font-bold flex flex-wrap items-center gap-1 bg-emerald-50/70 px-1.5 py-0.5 rounded border border-emerald-200/50">
+                              <span>✅ 主檔: {custObj.name}</span>
+                              {custObj.vipLevel === 'VIP' && <span className="bg-amber-100 text-amber-800 text-[8px] px-1 rounded font-extrabold scale-90">🌟 VIP</span>}
+                              {custObj.vipLevel === 'Blacklist' && <span className="bg-red-100 text-red-800 text-[8px] px-1 rounded font-extrabold scale-90">⚠️ 黑名單</span>}
+                            </div>
+                          );
+                        } else {
+                          return (
+                            <div className="mt-1.5 text-[10px] text-amber-700 font-medium flex flex-wrap items-center justify-between gap-1 bg-amber-50/50 px-1.5 py-0.5 rounded border border-amber-200/40">
+                              <span>⚠️ 尚未建立主檔</span>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (!trimmedIg) return;
+                                  const newId = 'cust_' + Math.random().toString(36).slice(2, 10);
+                                  const newCust = {
+                                    id: newId,
+                                    name: trimmedIg,
+                                    customerIG: trimmedIg,
+                                    vipLevel: 'New' as const,
+                                    createdAt: new Date().toISOString()
+                                  };
+                                  await onSaveCustomer(newCust);
+                                }}
+                                className="text-[9px] bg-amber-600/10 hover:bg-amber-600 text-amber-800 hover:text-white px-1.5 py-0.2 rounded font-extrabold transition-all active:scale-95 cursor-pointer border border-amber-600/20"
+                                title="一鍵將此 IG 帳號快速建立於顧客主資料庫中"
+                              >
+                                快速建立顧客 ➕
+                              </button>
+                            </div>
+                          );
+                        }
+                      })()}
                     </div>
 
                     {/* Series & specification Keyword */}
