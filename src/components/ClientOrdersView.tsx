@@ -286,7 +286,7 @@ export default function ClientOrdersView({
         customerIG: currentIG,
         customerName: currentIG,
         seriesName: matchedSeriesName || '代購手動輸入',
-        characterName: matchedCharName || '常態規格',
+        characterName: matchedCharName || '',
         spec: finalSpec || '代購周邊明細',
         qty,
         price: finalPrice || '100',
@@ -306,7 +306,7 @@ export default function ClientOrdersView({
           if (matchedProd) {
             updated.matchedProductId = matchedProd.id;
             updated.seriesName = series.find(s => s.id === matchedProd.seriesId)?.name || '代購手動輸入';
-            updated.characterName = chars.find(c => c.id === matchedProd.characterId)?.name || '常態規格';
+            updated.characterName = chars.find(c => c.id === matchedProd.characterId)?.name || '';
             updated.spec = matchedProd.spec || value;
             if (!updated.price || updated.price === '100' || updated.price.trim() === '') {
               updated.price = matchedProd.price || '';
@@ -327,7 +327,7 @@ export default function ClientOrdersView({
         customerIG: '',
         customerName: '',
         seriesName: '代購手動輸入',
-        characterName: '常態規格',
+        characterName: '',
         spec: '',
         qty: 1,
         price: '100',
@@ -1261,7 +1261,7 @@ export default function ClientOrdersView({
                           const pr = products.find(p => p.id === pId);
                           if (pr) {
                             const seName = series.find(s => s.id === pr.seriesId)?.name || '代購手動輸入';
-                            const chName = chars.find(c => c.id === pr.characterId)?.name || '常態規格';
+                            const chName = chars.find(c => c.id === pr.characterId)?.name || '';
                             handleUpdateDraft(draft.id, 'matchedProductId', pId);
                             handleUpdateDraft(draft.id, 'seriesName', seName);
                             handleUpdateDraft(draft.id, 'characterName', chName);
