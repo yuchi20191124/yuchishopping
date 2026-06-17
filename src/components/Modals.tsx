@@ -101,7 +101,9 @@ export function CoModal({
       clientOrdered: false,
       items: [EMPTY_CO_ITEM()],
       notes: '',
-      createdAt: ''
+      createdAt: '',
+      isShipped: false,
+      shippedAt: ''
     };
   });
 
@@ -491,6 +493,50 @@ export function CoModal({
             className="w-full p-3 border border-[#BEB8AE] focus:border-[#3A72A0] rounded-xl bg-white text-gray-800 outline-none leading-relaxed resize-y"
             id="modal-co-notes"
           />
+        </div>
+
+        {/* Order Status Options */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-gray-50/70 border border-gray-200 rounded-xl">
+          <label className="flex items-center gap-2.5 cursor-pointer font-bold select-none text-gray-700">
+            <input
+              type="checkbox"
+              checked={form.clientOrdered}
+              onChange={(e) => setForm(f => ({ ...f, clientOrdered: e.target.checked }))}
+              className="w-4 h-4 text-[#3A72A0] border-gray-300 rounded focus:ring-[#3A72A0]"
+            />
+            <span className="text-xs">✅ 標記已於賣貨便下單</span>
+          </label>
+
+          <div className="space-y-2">
+            <label className="flex items-center gap-2.5 cursor-pointer font-bold select-none text-gray-700">
+              <input
+                type="checkbox"
+                checked={form.isShipped || false}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setForm(f => ({
+                    ...f,
+                    isShipped: checked,
+                    shippedAt: checked ? (f.shippedAt || new Date().toISOString().split('T')[0]) : undefined
+                  }));
+                }}
+                className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+              />
+              <span className="text-xs">🚚 標記已出貨</span>
+            </label>
+            
+            {form.isShipped && (
+              <div className="pl-6 animate-in fade-in duration-100">
+                <label className="block text-[10px] text-gray-400 font-bold mb-1">📅 出貨日期</label>
+                <input
+                  type="date"
+                  value={form.shippedAt || ''}
+                  onChange={(e) => setForm(f => ({ ...f, shippedAt: e.target.value }))}
+                  className="px-2.5 py-1.5 border border-[#BEB8AE] rounded-lg bg-white font-mono text-xs w-full max-w-[170px] h-9"
+                />
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Action Button Drawers */}
