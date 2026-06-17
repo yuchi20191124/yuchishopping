@@ -38,6 +38,7 @@ interface ClientOrdersViewProps {
   cos: ClientOrder[];
   pos: PreOrder[];
   onToggleOrdered: (co: ClientOrder) => void;
+  onToggleShipped?: (co: ClientOrder) => void;
   onMarkSent: (coId: string, itemId: string) => void;
   onEdit: (co: ClientOrder) => void;
   onDelete: (id: string) => void;
@@ -82,6 +83,7 @@ export default function ClientOrdersView({
   cos,
   pos,
   onToggleOrdered,
+  onToggleShipped,
   onMarkSent,
   onEdit,
   onDelete,
@@ -151,11 +153,17 @@ export default function ClientOrdersView({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [masterId, setMasterId] = useState<string>('');
 
+  // Split management
+  const [splittingOrder, setSplittingOrder] = useState<ClientOrder | null>(null);
+  const [splitItems, setSplitItems] = useState<Record<string, number>>({});
+  const [splitError, setSplitError] = useState<string | null>(null);
+  const [shippedFilter, setShippedFilter] = useState<'all' | 'shipped' | 'unshipped'>('all');
+
   // Filtering for Client Orders
   const filteredOrders = useMemo(() => {
     return cos.filter(
       (c) =>
-        !search ||
+        (!search ||
         c.customerIG?.toLowerCase().includes(search.toLowerCase()) ||
         c.customerName?.toLowerCase().includes(search.toLowerCase()) ||
         c.items.some(
@@ -163,9 +171,12 @@ export default function ClientOrdersView({
             i.series?.toLowerCase().includes(search.toLowerCase()) ||
             i.character?.toLowerCase().includes(search.toLowerCase()) ||
             i.spec?.toLowerCase().includes(search.toLowerCase())
-        )
+        )) &&
+        (shippedFilter === 'all' ||
+         (shippedFilter === 'shipped' && c.isShipped) ||
+         (shippedFilter === 'unshipped' && !c.isShipped))
     );
-  }, [cos, search]);
+  }, [cos, search, shippedFilter]);
 
 
   /* ═════════════════════════════════════════════════
@@ -569,7 +580,7 @@ export default function ClientOrdersView({
       customerIG: editingCust.customerIG?.trim().replace(/^@/, '') || 'anonymous',
       customerName: editingCust.name?.trim() || editingCust.customerIG,
       clientOrdered: false,
-      notes: `🌠 由許願池商品 [${wish.itemName}] 轉入正式對帳訂單。原許願備註: ${wish.notes || '無'}`,
+      notes: `🌠 由許願池商品 [${wish.itemName}] 轉入正式代購訂單。原許願備註: ${wish.notes || '無'}`,
       createdAt: new Date().toISOString(),
       items: [
         {
@@ -692,18 +703,59 @@ export default function ClientOrdersView({
             </div>
           </div>
 
-          {/* SEARCH INPUT */}
-          <div className="relative max-w-md">
-            <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-gray-400">
-              <Search className="w-4.5 h-4.5" />
-            </span>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="搜尋 IG 帳號、名字或商品明細..."
-              className="w-full pl-10 pr-4 h-12 border border-[#BEB8AE] focus:border-[#3A72A0] focus:ring-1 focus:ring-[#3A72A0]/20 bg-white rounded-xl text-xs transition-all outline-none"
-            />
+          {/* SEARCH & FILTERS SECTION */}
+          <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
+            <div className="relative flex-1 max-w-md">
+              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-gray-400">
+                <Search className="w-4.5 h-4.5" />
+              </span>
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="搜尋 IG 帳號、名字或商品明細..."
+                className="w-full pl-10 pr-4 h-12 border border-[#BEB8AE] focus:border-[#3A72A0] focus:ring-1 focus:ring-[#3A72A0]/20 bg-white rounded-xl text-xs transition-all outline-none"
+              />
+            </div>
+
+            {/* Shipped / Unshipped Filter Buttons */}
+            <div className="flex bg-[#ede8de]/50 p-1 border-2 border-[#1E1E1E] rounded-xl self-start md:self-auto shrink-0 divide-x divide-gray-200">
+              <button
+                type="button"
+                onClick={() => setShippedFilter('all')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  shippedFilter === 'all'
+                    ? 'bg-[#3A72A0] text-white shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900 bg-transparent'
+                }`}
+              >
+                全部代購 ({cos.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setShippedFilter('unshipped')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  shippedFilter === 'unshipped'
+                    ? 'bg-amber-600 text-white shadow-sm'
+                    : 'text-gray-650 hover:text-gray-950 bg-transparent'
+                }`}
+              >
+                <Clock className="w-3.5 h-3.5" />
+                <span>待出貨 ({cos.filter(o => !o.isShipped).length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShippedFilter('shipped')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  shippedFilter === 'shipped'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-gray-650 hover:text-indigo-950 bg-transparent'
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>已出貨 ({cos.filter(o => o.isShipped).length})</span>
+              </button>
+            </div>
           </div>
 
           {/* ORDERS LIST */}
@@ -799,20 +851,69 @@ export default function ClientOrdersView({
                               ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                               : 'bg-amber-50 text-amber-800 border-amber-200'
                           }`}
-                          title="標記買家是否聯絡完成對帳"
+                          title="標記買家是否已下單"
                         >
                           {c.clientOrdered ? (
                             <>
                               <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
-                              <span>已收單對帳</span>
+                              <span>已下單</span>
                             </>
                           ) : (
                             <>
                               <Square className="w-3.5 h-3.5 text-amber-500" />
-                              <span>待確認對帳</span>
+                              <span>未下單</span>
                             </>
                           )}
                         </button>
+
+                        {/* Shipped Status Button & Date picker */}
+                        <div className="flex items-center gap-1.5 bg-[#FFF] p-1 border border-[#BEB8AE]/40 rounded-xl h-9 sm:h-10">
+                          <button
+                            type="button"
+                            onClick={() => onToggleShipped?.(c)}
+                            className={`flex items-center justify-center gap-1.5 px-2.5 h-7 sm:h-8 text-[10px] font-bold rounded-lg cursor-pointer select-none transition-all ${
+                              c.isShipped
+                                ? 'bg-[#3A72A0]/10 text-[#3A72A0] border border-[#3A72A0]/20'
+                                : 'bg-gray-50 text-gray-800 hover:bg-gray-100 border border-gray-250/70'
+                            }`}
+                            title={c.isShipped ? "標記為待出貨" : "標記為已出貨"}
+                          >
+                            {c.isShipped ? (
+                              <>
+                                <CheckCircle2 className="w-3 h-3 text-[#3A72A0]" />
+                                <span className="font-bold">已出貨</span>
+                              </>
+                            ) : (
+                              <>
+                                <Clock className="w-3 h-3 text-gray-500" />
+                                <span className="text-gray-600">待出貨</span>
+                              </>
+                            )}
+                          </button>
+
+                          {c.isShipped ? (
+                            <div className="flex items-center gap-1 shrink-0 animate-in fade-in duration-100">
+                              <span className="text-[9px] text-gray-400 font-bold">📅</span>
+                              <input
+                                type="date"
+                                value={c.shippedAt || ''}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={async (e) => {
+                                  const newDate = e.target.value;
+                                  if (!newDate) return;
+                                  const updated = { ...c, shippedAt: newDate };
+                                  if (onSaveCo) {
+                                    await onSaveCo(updated);
+                                  }
+                                }}
+                                className="text-[10px] h-7 sm:h-8 border border-gray-200/80 rounded-lg px-1 bg-[#FDFBF7] font-mono font-bold text-gray-700 outline-none w-[112px] text-center"
+                                title="點此變更出貨日期"
+                              />
+                            </div>
+                          ) : (
+                            <span className="text-[9px] text-gray-400 italic px-1 font-sans">無日期</span>
+                          )}
+                        </div>
 
                         <div className="text-right min-w-[60px]">
                           {isCompact ? (
@@ -831,8 +932,25 @@ export default function ClientOrdersView({
 
                         <div className="flex items-center gap-1 h-9 sm:h-10 border border-[#BEB8AE] rounded-xl overflow-hidden bg-white">
                           <button
+                            onClick={() => {
+                              setSplittingOrder(c);
+                              const initial: Record<string, number> = {};
+                              (c.items || []).forEach(item => {
+                                initial[item.id] = 0;
+                              });
+                              setSplitItems(initial);
+                              setSplitError(null);
+                            }}
+                            className={`hover:bg-blue-50 flex items-center justify-center text-blue-600 active:scale-90 transition-all cursor-pointer ${
+                              isCompact ? 'p-1.5 min-w-[32px]' : 'p-2 min-w-[40px]'
+                            }`}
+                            title="拆分此訂單之商品 (拆單)"
+                          >
+                            <Layers className="w-3.5 h-3.5" />
+                          </button>
+                          <button
                             onClick={() => onEdit(c)}
-                            className={`hover:bg-gray-100 flex items-center justify-center text-gray-600 active:scale-90 transition-all cursor-pointer ${
+                            className={`hover:bg-gray-100 border-l border-[#BEB8AE]/60 flex items-center justify-center text-gray-600 active:scale-90 transition-all cursor-pointer ${
                               isCompact ? 'p-1.5 min-w-[32px]' : 'p-2 min-w-[40px]'
                             }`}
                             title="編輯此代購明細"
@@ -1239,7 +1357,7 @@ export default function ClientOrdersView({
                     客戶資料維護 (Customer Master Registry)
                   </h2>
                   <p className="text-gray-400 text-[10px] mt-0.5">
-                    用於整合對帳、手機號碼備註、標記 VIP 特權與黑名單。
+                    用於整合客戶資訊、手機號碼備註、標記 VIP 特權與黑名單。
                   </p>
                 </div>
 
@@ -1353,7 +1471,7 @@ export default function ClientOrdersView({
 
                           {cust.pendingPayCount > 0 && (
                             <div className="text-right bg-amber-50 px-2 py-0.5 rounded border border-amber-200 shrink-0">
-                              <span className="text-[9px] text-amber-700 font-mono uppercase block leading-none">待對帳款</span>
+                              <span className="text-[9px] text-amber-700 font-mono uppercase block leading-none">待下單</span>
                               <span className="text-[11px] font-black font-mono text-amber-800 mt-0.5 block leading-none">
                                 {cust.pendingPayCount} 筆
                               </span>
@@ -1627,7 +1745,7 @@ export default function ClientOrdersView({
               </div>
             ) : (
               <div className="bg-white border-2 border-[#1E1E1E] rounded-2xl p-6 text-center text-gray-450 italic text-xs space-y-2 animate-in fade-in duration-100">
-                <p>💡 連按左側任何顧客行，即可在此開啟該買家的「CRM 面板」，設定聯繫手機、累積對帳總額、查看專屬代購「許願池品項」並一鍵快速轉下單！</p>
+                <p>💡 連按左側任何顧客行，即可在此開啟該買家的「CRM 面板」，設定聯繫手機、累積消費總額、查看專屬代購「許願池品項」並一鍵快速轉下單！</p>
                 <button
                   onClick={handleNewCustTrigger}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-bold transition-all mt-3"
@@ -1747,7 +1865,7 @@ export default function ClientOrdersView({
                                 ? 'bg-emerald-50 text-emerald-850 border-emerald-250' 
                                 : 'bg-amber-50 text-amber-850 border-[#BEB8AE]'
                             }`}>
-                              {o.clientOrdered ? '已收單對帳' : '待確認對帳'}
+                              {o.clientOrdered ? '已下單' : '未下單'}
                             </span>
                             {isMaster && (
                               <span className="bg-[#3A72A0] text-white text-[9px] font-bold px-1.5 py-0.5 rounded-lg shrink-0">
@@ -1794,7 +1912,7 @@ export default function ClientOrdersView({
                         </button>
 
                         <div className="text-right">
-                          <span className="text-[9px] text-gray-400 font-mono">本單對帳合計</span>
+                          <span className="text-[9px] text-gray-400 font-mono">本單金額合計</span>
                           <div className="text-xs font-bold text-[#3A72A0] font-mono leading-none mt-0.5">
                             ${orderTotal.toLocaleString()}
                           </div>
@@ -1841,7 +1959,217 @@ export default function ClientOrdersView({
         );
       })()}
 
+      {/* ──────────────────────────────────────────────────
+          CLIENT ORDER SPLIT DIALOGUE (CUSTOM MODAL)
+          ────────────────────────────────────────────────── */}
+      {splittingOrder && (() => {
+        const handleSplitQtyChange = (itemId: string, val: number, max: number) => {
+          const clamped = Math.min(Math.max(0, val), max);
+          setSplitItems(prev => ({
+            ...prev,
+            [itemId]: clamped
+          }));
+          setSplitError(null);
+        };
+
+        const handleExecuteSplit = async () => {
+          if (!splittingOrder || !onSaveCo) return;
+
+          const originalItems: CoItem[] = [];
+          const splitOutItems: CoItem[] = [];
+
+          for (const item of splittingOrder.items) {
+            const moveQty = splitItems[item.id] || 0;
+            if (moveQty > 0) {
+              if (moveQty < item.qty) {
+                // Keep some, move some
+                originalItems.push({
+                  ...item,
+                  qty: item.qty - moveQty
+                });
+                splitOutItems.push({
+                  ...item,
+                  id: 'coi_' + Math.random().toString(36).slice(2, 10), // Give new ID to the split piece
+                  qty: moveQty
+                });
+              } else {
+                // Move all
+                splitOutItems.push({
+                  ...item
+                });
+              }
+            } else {
+              // Keep all
+              originalItems.push({
+                ...item
+              });
+            }
+          }
+
+          if (splitOutItems.length === 0) {
+            setSplitError("請至少選擇一個商品數量進行拆分！");
+            return;
+          }
+
+          if (originalItems.length === 0) {
+            setSplitError("您不能將「所有」商品都拆分出去（那樣會使原訂單變空）。請保留至少一項商品在原訂單中！");
+            return;
+          }
+
+          try {
+            // 1. Update original order
+            const updatedOriginalOrder: ClientOrder = {
+              ...splittingOrder,
+              items: originalItems
+            };
+
+            // 2. Create split order
+            const newOrderId = 'co_' + Math.random().toString(36).slice(2, 10);
+            const newOrder: ClientOrder = {
+              ...splittingOrder,
+              id: newOrderId,
+              items: splitOutItems,
+              notes: splittingOrder.notes || '',
+              createdAt: new Date().toISOString(),
+              isShipped: false,
+              shippedAt: undefined
+            };
+
+            // Save updated original
+            await onSaveCo(updatedOriginalOrder);
+            // Save new order
+            await onSaveCo(newOrder);
+
+            // Reset state
+            setSplittingOrder(null);
+            setSplitItems({});
+            setSplitError(null);
+          } catch (err) {
+            console.error("拆單發生錯誤:", err);
+            setSplitError("拆單保存失敗，請稍後重試。");
+          }
+        };
+
+        return (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-[2px] z-[100] flex items-center justify-center p-4">
+            <div className="bg-white border-4 border-[#1E1E1E] rounded-2xl w-full max-w-xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+              {/* Header */}
+              <div className="bg-[#FFFCF7] border-b border-[#BEB8AE]/60 p-5 shrink-0 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🥞</span>
+                  <div>
+                    <h3 className="font-sans font-extrabold text-base text-[#1e1e1e] tracking-tight">
+                      拆分客戶訂單貨夾 (拆單)
+                    </h3>
+                    <p className="text-[10px] text-gray-500 mt-1">
+                      買家：👤 {splittingOrder.customerName || '未命名'} (@{splittingOrder.customerIG}) · 原訂單編號末四碼: <span className="font-mono bg-gray-100 px-1 py-0.5 rounded text-gray-700 font-bold">{splittingOrder.id.slice(-4)}</span>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSplittingOrder(null)}
+                  className="p-1 text-gray-400 hover:text-gray-700 bg-transparent"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Items List inside modal */}
+              <div className="p-5 flex-1 overflow-y-auto space-y-4">
+                <p className="text-xs text-amber-800 bg-amber-50 rounded-lg p-2.5 font-sans border border-amber-200">
+                  💡 <b>操作說明</b>：下方列出此訂單所有品項。請在右側欄位輸入或點擊<b>欲搬移/劃分到「新託運單」的商品數量</b>，未被劃分的數量則會繼續留在這個原訂單中。
+                </p>
+
+                <div className="space-y-3">
+                  {splittingOrder.items.map((item) => {
+                    const moveQty = splitItems[item.id] || 0;
+                    const maxQty = item.qty || 1;
+
+                    return (
+                      <div key={item.id} className="border border-gray-150 rounded-xl p-3 bg-gray-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-bold text-gray-800">
+                            {[item.series, item.spec, item.character].filter(Boolean).join(' · ') || '常態規格商品'}
+                          </div>
+                          <div className="text-[10px] text-gray-400 font-mono mt-1">
+                            原存數量：{maxQty} 件 · 單價：${parseFloat(item.price).toLocaleString()}
+                          </div>
+                        </div>
+
+                        {/* Adjust split qty selector */}
+                        <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
+                          <span className="text-[10px] text-gray-500">分出：</span>
+                          <button
+                            type="button"
+                            onClick={() => handleSplitQtyChange(item.id, moveQty - 1, maxQty)}
+                            className="w-7 h-7 bg-white hover:bg-gray-150 active:scale-95 border border-gray-350 rounded-lg flex items-center justify-center font-bold font-mono cursor-pointer select-none text-gray-600"
+                          >
+                            -
+                          </button>
+                          <input
+                            type="number"
+                            min={0}
+                            max={maxQty}
+                            value={moveQty}
+                            onChange={(e) => handleSplitQtyChange(item.id, parseInt(e.target.value) || 0, maxQty)}
+                            className="w-12 h-7 border border-gray-350 bg-white text-center font-mono font-bold text-xs rounded-lg text-gray-855 outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleSplitQtyChange(item.id, moveQty + 1, maxQty)}
+                            className="w-7 h-7 bg-white hover:bg-gray-150 active:scale-95 border border-gray-350 rounded-lg flex items-center justify-center font-bold font-mono cursor-pointer select-none text-gray-600"
+                          >
+                            +
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSplitQtyChange(item.id, maxQty, maxQty)}
+                            className="text-[9px] text-[#3A72A0] hover:underline px-1 py-1 font-bold"
+                          >
+                            全分
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Action area footer */}
+              <div className="bg-[#ede8de]/50 border-t border-[#BEB8AE]/60 p-4 space-y-3 shrink-0">
+                {splitError && (
+                  <div className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded-lg p-2.5 leading-normal flex items-start gap-1.5 font-bold animate-pulse">
+                    <span>⚠️</span>
+                    <span>{splitError}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between gap-3 text-xs w-full">
+                  <span className="text-gray-400 font-sans text-[10px]">
+                    * 拆分保存後，兩筆訂單將同步到資料庫與主檔。
+                  </span>
+
+                  <div className="flex gap-2.5">
+                    <button
+                      onClick={() => setSplittingOrder(null)}
+                      className="px-4 py-2 bg-white hover:bg-gray-100 border border-[#BEB8AE] font-bold text-gray-650 rounded-xl cursor-pointer active:scale-95 transition-all text-xs h-10"
+                    >
+                      關閉取消
+                    </button>
+                    <button
+                      onClick={handleExecuteSplit}
+                      className="px-5 py-2 bg-[#3A72A0] hover:bg-[#2e5d85] border-0 font-bold text-white rounded-xl shadow-xs cursor-pointer active:scale-95 transition-all text-xs h-10"
+                    >
+                      🚀 確認執行拆單
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
     </div>
   );
 }
-
