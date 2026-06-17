@@ -233,120 +233,139 @@ export default function App() {
   };
 
   // A. CUSTOMER ORDERS LOG
-  const saveCo = async (co: ClientOrder) => {
-    const finalId = co.id || 'co_' + Math.random().toString(36).slice(2, 10);
-    const finalRecord: ClientOrder = {
-      ...co,
-      id: finalId,
-      createdAt: co.createdAt || new Date().toISOString()
-    };
-
-    const originalCo = cos.find(c => c.id === finalId);
-    const previousIG = originalCo ? (originalCo.customerIG || '').trim() : '';
-    const previousName = originalCo ? (originalCo.customerName || '').trim() : '';
-
-    // Auto-update or add customer block
-    const cleanIG = (finalRecord.customerIG || '').trim();
-    const cleanName = (finalRecord.customerName || '').trim();
-
-    let newCust: Customer | null = null;
-    let updatedCust: Customer | null = null;
-    let updatedOrders: ClientOrder[] = [];
+  const saveCo = async (coOrCos: ClientOrder | ClientOrder[]) => {
+    const inputCos = Array.isArray(coOrCos) ? coOrCos : [coOrCos];
     
-    if (cleanIG || cleanName) {
-      // Find matching customer safely, searching by OLD details if renamed, or NEW details otherwise
-      const searchIG = previousIG || cleanIG;
-      const searchName = previousName || cleanName;
+    // Create deep copies / copies of current state to simulate sequential application safely
+    let currentCos = [...cos];
+    let currentCusts = [...customers];
+    
+    const recordsToSave: ClientOrder[] = [];
+    const newCustsToSave: Customer[] = [];
+    const updatedCustsToSave: Customer[] = [];
+    const cascadingCosToSave: ClientOrder[] = [];
 
-      const existingCustomer = customers.find(c => 
-        c && (
-          (searchIG && (c.customerIG || '').toLowerCase() === searchIG.toLowerCase()) ||
-          (searchName && (c.name || '').toLowerCase() === searchName.toLowerCase())
-        )
-      );
+    // Map to keep track of any cascading changes to avoid duplicative entries
+    const cascadeUpdatedMap = new Map<string, ClientOrder>();
+    const inputIds = inputCos.map(ic => ic.id).filter(Boolean);
 
-      if (!existingCustomer) {
-        newCust = {
-          id: 'cust_' + Math.random().toString(36).slice(2, 10),
-          name: cleanName || cleanIG,
-          customerIG: cleanIG || cleanName,
-          createdAt: new Date().toISOString()
-        };
-      } else {
-        let updated = false;
-        const tempCust = { ...existingCustomer };
-        if (cleanName && (existingCustomer.name || '') !== cleanName) {
-          tempCust.name = cleanName;
-          updated = true;
-        }
-        if (cleanIG && (existingCustomer.customerIG || '') !== cleanIG) {
-          tempCust.customerIG = cleanIG;
-          updated = true;
-        }
-        if (updated) {
-          updatedCust = tempCust;
-        }
+    for (const co of inputCos) {
+      const finalId = co.id || 'co_' + Math.random().toString(36).slice(2, 10);
+      const finalRecord: ClientOrder = {
+        ...co,
+        id: finalId,
+        createdAt: co.createdAt || new Date().toISOString()
+      };
+      
+      recordsToSave.push(finalRecord);
 
-        // Cascade update ALL other ClientOrders belonging to this customer to avoid orphaned or split records
-        const igToRename = (existingCustomer.customerIG || '').trim().toLowerCase();
-        const nameToRename = (existingCustomer.name || '').trim().toLowerCase();
+      // We look up the original order in our simulated state `currentCos`
+      const originalCo = currentCos.find(c => c.id === finalId);
+      const previousIG = originalCo ? (originalCo.customerIG || '').trim() : '';
+      const previousName = originalCo ? (originalCo.customerName || '').trim() : '';
 
-        if (igToRename || nameToRename) {
-          const ordersToUpdate = cos.filter(order => 
-            order.id !== finalId && (
-              (igToRename && (order.customerIG || '').toLowerCase() === igToRename) ||
-              (nameToRename && (order.customerName || '').toLowerCase() === nameToRename)
-            )
-          );
+      const cleanIG = (finalRecord.customerIG || '').trim();
+      const cleanName = (finalRecord.customerName || '').trim();
 
-          if (ordersToUpdate.length > 0) {
-            updatedOrders = ordersToUpdate.map(order => ({
-              ...order,
-              customerIG: cleanIG || order.customerIG,
-              customerName: cleanName || order.customerName
-            }));
+      if (cleanIG || cleanName) {
+        const searchIG = previousIG || cleanIG;
+        const searchName = previousName || cleanName;
+
+        const existingCustomerIndex = currentCusts.findIndex(c => 
+          c && (
+            (searchIG && (c.customerIG || '').toLowerCase() === searchIG.toLowerCase()) ||
+            (searchName && (c.name || '').toLowerCase() === searchName.toLowerCase())
+          )
+        );
+
+        if (existingCustomerIndex === -1) {
+          const newCust: Customer = {
+            id: 'cust_' + Math.random().toString(36).slice(2, 10),
+            name: cleanName || cleanIG,
+            customerIG: cleanIG || cleanName,
+            createdAt: new Date().toISOString()
+          };
+          currentCusts.push(newCust);
+          newCustsToSave.push(newCust);
+        } else {
+          const existingCustomer = currentCusts[existingCustomerIndex];
+          let updated = false;
+          const tempCust = { ...existingCustomer };
+          if (cleanName && (existingCustomer.name || '') !== cleanName) {
+            tempCust.name = cleanName;
+            updated = true;
+          }
+          if (cleanIG && (existingCustomer.customerIG || '') !== cleanIG) {
+            tempCust.customerIG = cleanIG;
+            updated = true;
+          }
+          if (updated) {
+            currentCusts[existingCustomerIndex] = tempCust;
+            updatedCustsToSave.push(tempCust);
+          }
+
+          // Cascade update other ClientOrders
+          const igToRename = (existingCustomer.customerIG || '').trim().toLowerCase();
+          const nameToRename = (existingCustomer.name || '').trim().toLowerCase();
+
+          if (igToRename || nameToRename) {
+            // Find in currentCos but skip any ID we are currently handling in inputCos
+            const ordersToUpdate = currentCos.filter(order => 
+              !inputIds.includes(order.id) && (
+                (igToRename && (order.customerIG || '').toLowerCase() === igToRename) ||
+                (nameToRename && (order.customerName || '').toLowerCase() === nameToRename)
+              )
+            );
+
+            for (const o of ordersToUpdate) {
+              const u = {
+                ...o,
+                customerIG: cleanIG || o.customerIG,
+                customerName: cleanName || o.customerName
+              };
+              cascadeUpdatedMap.set(o.id, u);
+            }
           }
         }
       }
+
+      // Update currentCos so next iteration has updated version
+      currentCos = currentCos.some(c => c.id === finalId)
+        ? currentCos.map(c => c.id === finalId ? finalRecord : c)
+        : [...currentCos, finalRecord];
+    }
+
+    // Now update cascading maps inside simulated state
+    if (cascadeUpdatedMap.size > 0) {
+      currentCos = currentCos.map(order => {
+        if (cascadeUpdatedMap.has(order.id)) {
+          const updated = cascadeUpdatedMap.get(order.id)!;
+          cascadingCosToSave.push(updated);
+          return updated;
+        }
+        return order;
+      });
     }
 
     // --- APPLY STATE UPDATES IMMEDIATELY ---
-    if (newCust) {
-      setCustomers(prev => [...prev, newCust!]);
-    } else if (updatedCust) {
-      setCustomers(prev => prev.map(c => c.id === updatedCust!.id ? updatedCust! : c));
-    }
-
-    setCos(prev => {
-      let withSavedCo = prev.some(c => c.id === finalId)
-        ? prev.map(c => c.id === finalId ? finalRecord : c)
-        : [...prev, finalRecord];
-
-      if (updatedOrders.length > 0) {
-        withSavedCo = withSavedCo.map(order => {
-          const matched = updatedOrders.find(u => u.id === order.id);
-          return matched ? matched : order;
-        });
-      }
-      return withSavedCo;
-    });
-
-    // Close the dialogue instantly
+    setCustomers(currentCusts);
+    setCos(currentCos);
     setModal(null);
 
     // --- EXECUTE FIREBASE SAVES IN THE BACKGROUND ---
     (async () => {
       try {
-        await StorageService.saveClientOrder(finalRecord);
+        await Promise.all(recordsToSave.map(r => StorageService.saveClientOrder(r)));
 
-        if (newCust) {
-          await StorageService.saveCustomer(newCust);
-        } else if (updatedCust) {
-          await StorageService.saveCustomer(updatedCust);
+        if (newCustsToSave.length > 0) {
+          await Promise.all(newCustsToSave.map(nc => StorageService.saveCustomer(nc)));
+        }
+        if (updatedCustsToSave.length > 0) {
+          await Promise.all(updatedCustsToSave.map(uc => StorageService.saveCustomer(uc)));
         }
 
-        if (updatedOrders.length > 0) {
-          await Promise.all(updatedOrders.map(order => StorageService.saveClientOrder(order)));
+        if (cascadingCosToSave.length > 0) {
+          await Promise.all(cascadingCosToSave.map(o => StorageService.saveClientOrder(o)));
         }
       } catch (e) {
         console.error("Background saveCo error:", e);
@@ -501,6 +520,27 @@ export default function App() {
         await StorageService.saveClientOrder(updated);
       } catch (e) {
         console.error("Background toggle error:", e);
+      }
+    })();
+  };
+
+  const handleToggleShipped = async (co: ClientOrder) => {
+    const isNowShipped = !co.isShipped;
+    const updated: ClientOrder = {
+      ...co,
+      isShipped: isNowShipped,
+      shippedAt: isNowShipped ? new Date().toISOString().split('T')[0] : undefined
+    };
+
+    // Direct in-memory update
+    setCos(prev => prev.map(c => c.id === co.id ? updated : c));
+
+    // Save in the background
+    (async () => {
+      try {
+        await StorageService.saveClientOrder(updated);
+      } catch (e) {
+        console.error("Background toggle shipped error:", e);
       }
     })();
   };
@@ -852,7 +892,7 @@ export default function App() {
       </header>
 
       {/* Main viewport panels */}
-      <main className="flex-1 w-full max-w-6xl mx-auto p-4 sm:p-6 pb-36 md:pb-40">
+      <main className="flex-1 w-full max-w-6xl mx-auto p-4 sm:p-6 pb-48 md:pb-56">
         {view === 'dashboard' && (
           <DashboardView 
             cos={cos} 
@@ -869,6 +909,7 @@ export default function App() {
             cos={cos}
             pos={pos}
             onToggleOrdered={handleToggleOrdered}
+            onToggleShipped={handleToggleShipped}
             onMarkSent={handleMarkItemSent}
             onEdit={(c) => setModal({ type: 'co', data: c })}
             onDelete={deleteCo}
@@ -995,4 +1036,3 @@ export default function App() {
     </div>
   );
 }
-
