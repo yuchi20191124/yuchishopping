@@ -69,7 +69,7 @@ export default function PreOrdersView({
       (p) =>
          (filter === 'all' || p.stage === filter) &&
          (!search || p.name?.toLowerCase().includes(search.toLowerCase()))
-    );
+    ).sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
   }, [pos, filter, search]);
 
   const groupedPos = useMemo(() => {
@@ -394,4 +394,3 @@ export default function PreOrdersView({
     </div>
   );
 }
-
