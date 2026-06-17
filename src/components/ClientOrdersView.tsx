@@ -772,6 +772,10 @@ export default function ClientOrdersView({
                 }, 0);
 
                 const hasDuplicates = duplicateMap[(c.customerIG || '').trim().toLowerCase()] > 1;
+                const customerIGLower = (c.customerIG || '').trim().toLowerCase();
+                const unshippedCount = cos.filter(
+                  o => (o.customerIG || '').trim().toLowerCase() === customerIGLower && !o.isShipped
+                ).length;
 
                 // Match customer level tag
                 const custProfile = customers.find(x => x.customerIG?.toLowerCase() === c.customerIG?.toLowerCase());
@@ -810,7 +814,7 @@ export default function ClientOrdersView({
                               )}
                             </h4>
 
-                            {onMergeSelectedOrders && hasDuplicates && (
+                            {onMergeSelectedOrders && hasDuplicates && unshippedCount >= 2 && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
