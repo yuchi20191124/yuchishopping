@@ -91,8 +91,10 @@ export default function ShipmentView({
             <p className="text-gray-500 text-sm">暫無國際包裹運送紀錄</p>
           </div>
         ) : (
-          ships.map((s) => {
-            const st = getStageConf(s.stage);
+          [...ships]
+            .sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime())
+            .map((s) => {
+              const st = getStageConf(s.stage);
             const linkedPos = getLinkedPoNames(s.poIds || []);
             const isExpanded = expandedId === s.id;
             const currentStageIndex = SHIP_STAGES.findIndex((stage) => stage.id === s.stage);
