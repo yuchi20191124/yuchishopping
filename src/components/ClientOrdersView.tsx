@@ -175,7 +175,7 @@ export default function ClientOrdersView({
         (shippedFilter === 'all' ||
          (shippedFilter === 'shipped' && c.isShipped) ||
          (shippedFilter === 'unshipped' && !c.isShipped))
-    );
+    ).sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
   }, [cos, search, shippedFilter]);
 
 
@@ -2037,7 +2037,7 @@ export default function ClientOrdersView({
               id: newOrderId,
               items: splitOutItems,
               notes: splittingOrder.notes || '',
-              createdAt: new Date().toISOString(),
+              createdAt: splittingOrder.createdAt || new Date().toISOString(),
               isShipped: false,
               shippedAt: undefined
             };
