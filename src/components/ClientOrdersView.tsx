@@ -51,7 +51,7 @@ interface ClientOrdersViewProps {
   onDeleteCustomer: (id: string) => Promise<void>;
   products?: Product[];
   expandProduct?: (p: Product) => string;
-  onSaveCo?: (co: ClientOrder) => Promise<void>;
+  onSaveCo?: (co: ClientOrder | ClientOrder[]) => Promise<void>;
   chars?: Character[];
   series?: Series[];
 }
@@ -870,7 +870,10 @@ export default function ClientOrdersView({
                         <div className="flex items-center gap-1.5 bg-[#FFF] p-1 border border-[#BEB8AE]/40 rounded-xl h-9 sm:h-10">
                           <button
                             type="button"
-                            onClick={() => onToggleShipped?.(c)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onToggleShipped?.(c);
+                            }}
                             className={`flex items-center justify-center gap-1.5 px-2.5 h-7 sm:h-8 text-[10px] font-bold rounded-lg cursor-pointer select-none transition-all ${
                               c.isShipped
                                 ? 'bg-[#3A72A0]/10 text-[#3A72A0] border border-[#3A72A0]/20'
@@ -2035,10 +2038,8 @@ export default function ClientOrdersView({
               shippedAt: undefined
             };
 
-            // Save updated original
-            await onSaveCo(updatedOriginalOrder);
-            // Save new order
-            await onSaveCo(newOrder);
+            // Save both atomically to prevent stale state overrides
+            await onSaveCo([updatedOriginalOrder, newOrder]);
 
             // Reset state
             setSplittingOrder(null);
