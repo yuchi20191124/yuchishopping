@@ -233,28 +233,88 @@ export default function ShipmentView({
                           };
                           const poSt = stagesMap[p.stage] || { label: '已下單', emoji: '🛒' };
 
-                          const detailItems = (p.linkedItems || []).map(li => {
+                          // Generate fully self-healed, merged detailItems list
+                          const detailItems: {
+                            coId: string;
+                            itemId: string;
+                            customerIG: string;
+                            customerName: string;
+                            series: string;
+                            spec: string;
+                            character: string;
+                            qty: number;
+                            price: string;
+                            status: string;
+                            isBroken?: boolean;
+                          }[] = [];
+
+                          const seenKeys = new Set<string>();
+
+                          // 1. Scan actual poId markings
+                          cos.forEach(c => {
+                            c.items?.forEach(i => {
+                              if (i.poId === p.id) {
+                                const key = `${c.id}-${i.id}`;
+                                seenKeys.add(key);
+                                detailItems.push({
+                                  coId: c.id,
+                                  itemId: i.id,
+                                  customerIG: c.customerIG || '未知',
+                                  customerName: c.customerName || '',
+                                  series: i.series || '未知系列',
+                                  spec: i.spec || '未知規格',
+                                  character: i.character || '未知角色',
+                                  qty: i.qty || 1,
+                                  price: i.price || '0',
+                                  status: i.status || 'pending'
+                                });
+                              }
+                            });
+                          });
+
+                          // 2. Scan defined linked items
+                          (p.linkedItems || []).forEach(li => {
+                            const key = `${li.coId}-${li.itemId}`;
+                            if (seenKeys.has(key)) return;
+
                             let clientOrder = cos.find(c => c.id === li.coId);
                             let item = clientOrder?.items?.find(i => i.id === li.itemId);
 
-                            // Self-healing fallback: find item by id in ANY client order if coId reference is broken/merged
                             if (!item) {
                               clientOrder = cos.find(c => c.items?.some(i => i.id === li.itemId));
                               item = clientOrder?.items?.find(i => i.id === li.itemId);
                             }
 
-                            return {
-                              coId: clientOrder?.id || li.coId,
-                              itemId: li.itemId,
-                              customerIG: clientOrder?.customerIG || '未知',
-                              customerName: clientOrder?.customerName || '',
-                              series: item?.series || '',
-                              spec: item?.spec || '',
-                              character: item?.character || '',
-                              qty: item?.qty || 1,
-                              price: item?.price || '0',
-                              status: item?.status || 'pending'
-                            };
+                            if (clientOrder && item) {
+                              seenKeys.add(key);
+                              detailItems.push({
+                                coId: clientOrder.id,
+                                itemId: item.id,
+                                customerIG: clientOrder.customerIG || '未知',
+                                customerName: clientOrder.customerName || '',
+                                series: item.series || '未知系列',
+                                spec: item.spec || '未知規格',
+                                character: item.character || '未知角色',
+                                qty: item.qty || 1,
+                                price: item.price || '0',
+                                status: item.status || 'pending'
+                              });
+                            } else {
+                              seenKeys.add(key);
+                              detailItems.push({
+                                coId: li.coId,
+                                itemId: li.itemId,
+                                customerIG: clientOrder?.customerIG || '未知顧客',
+                                customerName: clientOrder?.customerName || '',
+                                series: '海外單品',
+                                spec: '關聯已變更或正在拆單',
+                                character: '',
+                                qty: 1,
+                                price: '0',
+                                status: 'pending',
+                                isBroken: true
+                              });
+                            }
                           });
 
                           return (
