@@ -149,6 +149,37 @@ export default function App() {
           }
         });
       }
+
+      // SELF-HEALING: Auto-reconstitute any missing customer master records from existing orders
+      let healedAny = false;
+      if (Array.isArray(pCos)) {
+        pCos.forEach(order => {
+          const ig = (order.customerIG || '').trim();
+          const name = (order.customerName || '').trim();
+          if (!ig && !name) return;
+
+          const key = ig.toLowerCase() || name.toLowerCase();
+          if (!seenCustKeys.has(key)) {
+            seenCustKeys.add(key);
+            const newCust: Customer = {
+              id: 'cust_' + Math.random().toString(36).slice(2, 10),
+              name: name || ig,
+              customerIG: ig || name,
+              createdAt: order.createdAt || new Date().toISOString(),
+              vipLevel: 'New',
+              wishes: []
+            };
+            dedupedCusts.push(newCust);
+            healedAny = true;
+
+            // Save to Firestore and local storage in background
+            StorageService.saveCustomer(newCust).catch(err => {
+              console.error("Background auto-heal saving failed for customer:", err);
+            });
+          }
+        });
+      }
+
       setCustomers(dedupedCusts);
     } catch (e) {
       console.error("Failed to load local/cloud databases:", e);
