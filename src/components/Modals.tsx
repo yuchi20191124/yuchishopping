@@ -580,6 +580,7 @@ export function PoModal({
   onClose
 }: PoModalProps) {
   const isEdit = !!po;
+  const [custSearch, setCustSearch] = useState('');
   const [form, setForm] = useState<PreOrder>(() => {
     if (po) {
       return { 
@@ -612,6 +613,14 @@ export function PoModal({
   const eligibleCos = cos.filter(c => 
     c.items?.some(i => i.status === 'pending' || (isEdit && i.poId === po.id))
   );
+
+  const filteredEligibleCos = eligibleCos.filter(c => {
+    if (!custSearch.trim()) return true;
+    const query = custSearch.toLowerCase();
+    const matchIG = (c.customerIG || '').toLowerCase().includes(query);
+    const matchName = (c.customerName || '').toLowerCase().includes(query);
+    return matchIG || matchName;
+  });
 
   const handleSave = () => {
     if (!form.name.trim()) {
@@ -658,14 +667,30 @@ export function PoModal({
         </div>
 
         {/* Checklist selection for pending client order item lines */}
-        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2">
-          <div>
-            <span className="text-[10.5px] font-bold text-gray-500 font-mono uppercase tracking-wider block">
-              ◇ 勾選串聯客戶訂購單品（已串聯 {form.linkedItems.length} 件商品）:
-            </span>
-            <p className="text-[10px] text-gray-400 mt-1">
-              打勾即代表將客人的此項委託，歸入本採購包裹中。該單品會同步自動從「待訂購」跳轉至「已訂購」！
-            </p>
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-150 pb-2.5">
+            <div>
+              <span className="text-[10.5px] font-bold text-gray-500 font-mono uppercase tracking-wider block">
+                ◇ 勾選串聯客戶訂購單品（已串聯 {form.linkedItems.length} 件商品）:
+              </span>
+              <p className="text-[10px] text-gray-400 mt-1">
+                打勾即代表將客人的此項委託，歸入本採購包裹中。該單品會同步自動從「待訂購」跳轉至「已訂購」！
+              </p>
+            </div>
+
+            {/* Quick search by Customer Name / IG */}
+            <div className="relative w-full sm:w-64 shrink-0">
+              <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center text-gray-400">
+                <Search className="w-3.5 h-3.5" />
+              </span>
+              <input
+                type="text"
+                value={custSearch}
+                onChange={(e) => setCustSearch(e.target.value)}
+                placeholder="搜尋客戶 IG 帳號或姓名..."
+                className="w-full pl-8 pr-3 h-8 border border-[#BEB8AE] focus:border-[#3A72A0] rounded-xl text-[11px] bg-white text-gray-800 outline-none transition-all shadow-2xs"
+              />
+            </div>
           </div>
 
           <div className="max-h-60 overflow-y-auto space-y-3.5 pr-1 py-1.5">
@@ -673,27 +698,33 @@ export function PoModal({
               <div className="p-6 text-center text-gray-400">
                 目前全資料庫中，沒有任何「待訂購」狀態的客戶單品委託。
               </div>
+            ) : filteredEligibleCos.length === 0 ? (
+              <div className="p-8 text-center text-gray-400 italic bg-white rounded-lg border border-dashed border-gray-200">
+                找不到任何與「{custSearch}」相關的客戶或 IG
+              </div>
             ) : (
-              eligibleCos.map(c => {
+              filteredEligibleCos.map(c => {
                 const targetItems = c.items?.filter(i => i.status === 'pending' || (isEdit && i.poId === po.id));
                 if (targetItems.length === 0) return null;
 
                 return (
                   <div key={c.id} className="space-y-1.5 border-b border-gray-150 pb-2 bg-white p-2.5 rounded-lg border border-[#BEB8AE]/40">
-                    <div className="font-bold text-[#3A72A0]">@{c.customerIG}</div>
+                    <div className="font-bold text-[#3A72A0] flex justify-between items-center">
+                      <span>@{c.customerIG} {c.customerName ? `(${c.customerName})` : ''}</span>
+                    </div>
                     
                     <div className="space-y-1">
                       {targetItems.map(item => {
                         const isChecked = form.linkedItems?.some(li => li.coId === c.id && li.itemId === item.id);
                         return (
                           <label
-                            key={item.id}
-                            onClick={() => handleToggleLink(c.id, item.id)}
-                            className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer select-none text-[11.5px] ${
-                              isChecked 
-                                ? 'bg-[#3A72A0]/10 border-[#3A72A0]/60 text-gray-950 font-semibold' 
-                                : 'bg-transparent border-gray-200 text-gray-600 hover:bg-gray-100'
-                            }`}
+                             key={item.id}
+                             onClick={() => handleToggleLink(c.id, item.id)}
+                             className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer select-none text-[11.5px] ${
+                               isChecked 
+                                 ? 'bg-[#3A72A0]/10 border-[#3A72A0]/60 text-gray-950 font-semibold' 
+                                 : 'bg-transparent border-gray-200 text-gray-600 hover:bg-gray-100'
+                             }`}
                           >
                             <div className="flex items-center gap-2">
                               <input
@@ -911,8 +942,15 @@ export function ShipModal({
                 const isLoadedElsewhere = boundPoIds.has(poItem.id);
 
                 const poiInfo = (poItem.linkedItems || []).map(li => {
-                  const clientOrder = cos?.find(c => c.id === li.coId);
-                  const item = clientOrder?.items?.find(i => i.id === li.itemId);
+                  let clientOrder = cos?.find(c => c.id === li.coId);
+                  let item = clientOrder?.items?.find(i => i.id === li.itemId);
+
+                  // Self-healing fallback: find item by id in ANY client order if coId reference is broken/merged
+                  if (!item) {
+                    clientOrder = cos?.find(c => c.items?.some(i => i.id === li.itemId));
+                    item = clientOrder?.items?.find(i => i.id === li.itemId);
+                  }
+
                   return {
                     customerIG: clientOrder?.customerIG || '',
                     customerName: clientOrder?.customerName || '',
@@ -921,7 +959,7 @@ export function ShipModal({
                     character: item?.character || '',
                     qty: item?.qty || 1
                   };
-                }).filter(info => info.series || info.character || info.spec);
+                }).filter(info => info.series || info.character || info.spec || info.customerIG);
 
                 return (
                   <label
