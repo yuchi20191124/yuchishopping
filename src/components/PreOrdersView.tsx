@@ -130,6 +130,81 @@ export default function PreOrdersView({
     };
   };
 
+  const getResolvedLinkedItems = (po: PreOrder) => {
+    const list: {
+      coId: string;
+      itemId: string;
+      customerIG: string;
+      customerName: string;
+      desc: string;
+      qty: number;
+      price: number;
+      isBrokenFallback?: boolean;
+    }[] = [];
+
+    const seenKeys = new Set<string>();
+
+    // 1. Scan in-memory client orders for items that have item.poId equal to po.id
+    cos.forEach((c) => {
+      c.items?.forEach((i) => {
+        if (i.poId === po.id) {
+          const key = `${c.id}-${i.id}`;
+          seenKeys.add(key);
+          list.push({
+            coId: c.id,
+            itemId: i.id,
+            customerIG: c.customerIG,
+            customerName: c.customerName || '',
+            desc: [i.series, i.spec, i.character].filter(Boolean).join(' · ') || '商品物件',
+            qty: i.qty || 1,
+            price: parseFloat(i.price) || 0,
+          });
+        }
+      });
+    });
+
+    // 2. Scan defined linkedItems to ensure compatibility
+    po.linkedItems?.forEach((li) => {
+      const key = `${li.coId}-${li.itemId}`;
+      if (seenKeys.has(key)) return; // already added
+
+      let co = cos.find((c) => c.id === li.coId);
+      let item = co?.items?.find((i) => i.id === li.itemId);
+
+      if (!item) {
+        co = cos.find((c) => c.items?.some((i) => i.id === li.itemId));
+        item = co?.items?.find((i) => i.id === li.itemId);
+      }
+
+      if (co && item) {
+        seenKeys.add(key);
+        list.push({
+          coId: co.id,
+          itemId: item.id,
+          customerIG: co.customerIG,
+          customerName: co.customerName || '',
+          desc: [item.series, item.spec, item.character].filter(Boolean).join(' · ') || '商品物件',
+          qty: item.qty || 1,
+          price: parseFloat(item.price) || 0,
+        });
+      } else {
+        seenKeys.add(key);
+        list.push({
+          coId: li.coId,
+          itemId: li.itemId,
+          customerIG: co?.customerIG || '未知顧客',
+          customerName: co?.customerName || '',
+          desc: '海外官網/委託單品 (資訊同步中或已被商家微調/變更)',
+          qty: 1,
+          price: 0,
+          isBrokenFallback: true,
+        });
+      }
+    });
+
+    return list;
+  };
+
   return (
     <div className="space-y-6">
       {/* View Title Panel */}
@@ -252,6 +327,7 @@ export default function PreOrdersView({
                           const conf = getPOStageConf(po.stage);
                           const shipmentDoc = getPoShipment(po.id);
                           const isExpanded = expandedPoId === po.id;
+                          const resolvedList = getResolvedLinkedItems(po);
 
                           return (
                             <div
@@ -273,7 +349,7 @@ export default function PreOrdersView({
                                       <span>採購日期：{new Date(po.createdAt).toLocaleDateString()}</span>
                                       <span>·</span>
                                       <span className="text-[#3A72A0] font-medium">
-                                        與 {po.linkedItems?.length || 0} 筆客戶單品綁定
+                                        與 {resolvedList.length} 筆客戶單品綁定
                                       </span>
                                     </p>
                                   </div>
@@ -351,25 +427,26 @@ export default function PreOrdersView({
                                   </h5>
 
                                   <div className="divide-y divide-gray-100 bg-white border border-[#BEB8AE]/60 rounded-xl overflow-hidden text-xs">
-                                    {po.linkedItems?.length === 0 ? (
+                                    {resolvedList.length === 0 ? (
                                       <div className="p-4 text-center text-gray-400">
                                         本採購單中尚未串聯任何客戶單品。可點擊編輯串聯。
                                       </div>
                                     ) : (
-                                      po.linkedItems?.map((li, idx) => {
-                                        const det = getLinkedItemDetail(li.coId, li.itemId);
-                                        if (!det) return null;
-
+                                      resolvedList.map((li, idx) => {
                                         return (
-                                          <div key={idx} className="p-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                                          <div key={`${li.coId}-${li.itemId}-${idx}`} className={`p-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 ${li.isBrokenFallback ? 'bg-rose-50/40 text-amber-900' : 'bg-white'}`}>
                                             <div className="min-w-0">
-                                              <span className="font-bold text-amber-800">@{det.customerIG}</span>
-                                              <span className="text-gray-400 mx-2">·</span>
-                                              <span className="text-gray-800 font-medium">{det.desc}</span>
+                                              <span className="font-bold text-amber-800">@{li.customerIG} {li.customerName ? `(${li.customerName})` : ''}</span>
+                                              <span className="text-gray-300 mx-2">·</span>
+                                              <span className={`${li.isBrokenFallback ? 'text-gray-500 italic' : 'text-gray-800 font-medium'}`}>{li.desc}</span>
                                             </div>
-                                            <div className="flex items-center justify-between sm:justify-end gap-4">
-                                              <span className="text-gray-400 font-mono text-xs">數量：× {det.qty}</span>
-                                              <span className="font-bold text-[#3A72A0]">${(det.price * det.qty).toLocaleString()}</span>
+                                            <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0">
+                                              <span className="text-gray-400 font-mono text-xs">數量：× {li.qty}</span>
+                                              {!li.isBrokenFallback ? (
+                                                <span className="font-bold text-[#3A72A0]">${(li.price * li.qty).toLocaleString()}</span>
+                                              ) : (
+                                                <span className="text-[10px] text-rose-500 font-bold bg-rose-50 border border-rose-100 rounded px-1.5 py-0.5">資訊已異動/拆單</span>
+                                              )}
                                             </div>
                                           </div>
                                         );
@@ -400,4 +477,3 @@ export default function PreOrdersView({
     </div>
   );
 }
-
