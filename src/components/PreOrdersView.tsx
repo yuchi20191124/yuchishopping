@@ -112,10 +112,16 @@ export default function PreOrdersView({
   };
 
   const getLinkedItemDetail = (coId: string, itemId: string) => {
-    const co = cos.find((c) => c.id === coId);
-    if (!co) return null;
-    const item = co.items?.find((i) => i.id === itemId);
-    if (!item) return null;
+    let co = cos.find((c) => c.id === coId);
+    let item = co?.items?.find((i) => i.id === itemId);
+
+    // Self-healing fallback: find item by id in ANY client order if coId reference is broken/merged
+    if (!item) {
+      co = cos.find((c) => c.items?.some((i) => i.id === itemId));
+      item = co?.items?.find((i) => i.id === itemId);
+    }
+
+    if (!co || !item) return null;
     return {
       customerIG: co.customerIG,
       desc: [item.series, item.spec, item.character].filter(Boolean).join(' · '),
@@ -394,3 +400,4 @@ export default function PreOrdersView({
     </div>
   );
 }
+
