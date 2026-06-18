@@ -234,10 +234,17 @@ export default function ShipmentView({
                           const poSt = stagesMap[p.stage] || { label: '已下單', emoji: '🛒' };
 
                           const detailItems = (p.linkedItems || []).map(li => {
-                            const clientOrder = cos.find(c => c.id === li.coId);
-                            const item = clientOrder?.items?.find(i => i.id === li.itemId);
+                            let clientOrder = cos.find(c => c.id === li.coId);
+                            let item = clientOrder?.items?.find(i => i.id === li.itemId);
+
+                            // Self-healing fallback: find item by id in ANY client order if coId reference is broken/merged
+                            if (!item) {
+                              clientOrder = cos.find(c => c.items?.some(i => i.id === li.itemId));
+                              item = clientOrder?.items?.find(i => i.id === li.itemId);
+                            }
+
                             return {
-                              coId: li.coId,
+                              coId: clientOrder?.id || li.coId,
                               itemId: li.itemId,
                               customerIG: clientOrder?.customerIG || '未知',
                               customerName: clientOrder?.customerName || '',
