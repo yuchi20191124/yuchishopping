@@ -1,7 +1,5 @@
 /**
  * @license
- * SPDX-License-Identifier: Apache-2.0/**
- * @license
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -178,12 +176,8 @@ export const StorageService = {
       snap.forEach((docSnap) => {
         items.push(docSnap.data() as Character);
       });
-      const mergedMap = new Map<string, Character>();
-      local.forEach((l) => { if (l && l.id) mergedMap.set(l.id, l); });
-      items.forEach((item) => { if (item && item.id) mergedMap.set(item.id, item); });
-      const merged = Array.from(mergedMap.values());
-      saveLocal("of_chars", merged);
-      return merged;
+      saveLocal("of_chars", items);
+      return items;
     } catch (e) {
       handleFirestoreError(e, OperationType.LIST, "of_chars");
       return local;
@@ -232,12 +226,8 @@ export const StorageService = {
       snap.forEach((docSnap) => {
         items.push(docSnap.data() as Series);
       });
-      const mergedMap = new Map<string, Series>();
-      local.forEach((l) => { if (l && l.id) mergedMap.set(l.id, l); });
-      items.forEach((item) => { if (item && item.id) mergedMap.set(item.id, item); });
-      const merged = Array.from(mergedMap.values());
-      saveLocal("of_series", merged);
-      return merged;
+      saveLocal("of_series", items);
+      return items;
     } catch (e) {
       handleFirestoreError(e, OperationType.LIST, "of_series");
       return local;
@@ -286,12 +276,8 @@ export const StorageService = {
       snap.forEach((docSnap) => {
         items.push(docSnap.data() as Product);
       });
-      const mergedMap = new Map<string, Product>();
-      local.forEach((l) => { if (l && l.id) mergedMap.set(l.id, l); });
-      items.forEach((item) => { if (item && item.id) mergedMap.set(item.id, item); });
-      const merged = Array.from(mergedMap.values());
-      saveLocal("of_products", merged);
-      return merged;
+      saveLocal("of_products", items);
+      return items;
     } catch (e) {
       handleFirestoreError(e, OperationType.LIST, "of_products");
       return local;
@@ -340,12 +326,8 @@ export const StorageService = {
       snap.forEach((docSnap) => {
         items.push(docSnap.data() as ClientOrder);
       });
-      const mergedMap = new Map<string, ClientOrder>();
-      local.forEach((l) => { if (l && l.id) mergedMap.set(l.id, l); });
-      items.forEach((item) => { if (item && item.id) mergedMap.set(item.id, item); });
-      const merged = Array.from(mergedMap.values());
-      saveLocal("of_cos", merged);
-      return merged;
+      saveLocal("of_cos", items);
+      return items;
     } catch (e) {
       handleFirestoreError(e, OperationType.LIST, "of_cos");
       return local;
@@ -394,12 +376,8 @@ export const StorageService = {
       snap.forEach((docSnap) => {
         items.push(docSnap.data() as PreOrder);
       });
-      const mergedMap = new Map<string, PreOrder>();
-      local.forEach((l) => { if (l && l.id) mergedMap.set(l.id, l); });
-      items.forEach((item) => { if (item && item.id) mergedMap.set(item.id, item); });
-      const merged = Array.from(mergedMap.values());
-      saveLocal("of_pos", merged);
-      return merged;
+      saveLocal("of_pos", items);
+      return items;
     } catch (e) {
       handleFirestoreError(e, OperationType.LIST, "of_pos");
       return local;
@@ -448,12 +426,8 @@ export const StorageService = {
       snap.forEach((docSnap) => {
         items.push(docSnap.data() as Shipment);
       });
-      const mergedMap = new Map<string, Shipment>();
-      local.forEach((l) => { if (l && l.id) mergedMap.set(l.id, l); });
-      items.forEach((item) => { if (item && item.id) mergedMap.set(item.id, item); });
-      const merged = Array.from(mergedMap.values());
-      saveLocal("of_ships", merged);
-      return merged;
+      saveLocal("of_ships", items);
+      return items;
     } catch (e) {
       handleFirestoreError(e, OperationType.LIST, "of_ships");
       return local;
@@ -502,12 +476,8 @@ export const StorageService = {
       snap.forEach((docSnap) => {
         items.push(docSnap.data() as PackagingCost);
       });
-      const mergedMap = new Map<string, PackagingCost>();
-      local.forEach((l) => { if (l && l.id) mergedMap.set(l.id, l); });
-      items.forEach((item) => { if (item && item.id) mergedMap.set(item.id, item); });
-      const merged = Array.from(mergedMap.values());
-      saveLocal("of_pkgs", merged);
-      return merged;
+      saveLocal("of_pkgs", items);
+      return items;
     } catch (e) {
       handleFirestoreError(e, OperationType.LIST, "of_pkgs");
       return local;
@@ -556,24 +526,8 @@ export const StorageService = {
       snap.forEach((docSnap) => {
         items.push(docSnap.data() as Customer);
       });
-      
-      // Merge local with cloud: take cloud as source of truth for matching ids,
-      // but preserve any local records that haven't been synchronized to cloud yet.
-      const mergedMap = new Map<string, Customer>();
-      local.forEach((l: Customer) => {
-        if (l && l.id) {
-          mergedMap.set(l.id, l);
-        }
-      });
-      items.forEach((item: Customer) => {
-        if (item && item.id) {
-          mergedMap.set(item.id, item);
-        }
-      });
-      
-      const merged = Array.from(mergedMap.values());
-      saveLocal("of_customers", merged);
-      return merged;
+      saveLocal("of_customers", items);
+      return items;
     } catch (e) {
       handleFirestoreError(e, OperationType.LIST, "of_customers");
       return local;
