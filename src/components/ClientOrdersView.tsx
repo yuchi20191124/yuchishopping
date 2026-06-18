@@ -30,7 +30,11 @@ import {
   ArrowUpRight,
   CheckCircle2,
   XCircle,
-  X
+  X,
+  Truck,
+  Copy,
+  ExternalLink,
+  AlertCircle
 } from 'lucide-react';
 import { ClientOrder, PreOrder, CoItem, Customer, Product, Character, Series, WishItem } from '../types';
 
@@ -99,7 +103,7 @@ export default function ClientOrdersView({
   series = []
 }: ClientOrdersViewProps) {
   // Navigation sub-tabs inside parent view
-  const [subTab, setSubTab] = useState<'orders' | 'parser' | 'customers'>('orders');
+  const [subTab, setSubTab] = useState<'orders' | 'parser' | 'customers' | 'shipping'>('orders');
   
   // Shared search state
   const [search, setSearch] = useState('');
@@ -159,6 +163,91 @@ export default function ClientOrdersView({
   const [splitItems, setSplitItems] = useState<Record<string, number>>({});
   const [splitError, setSplitError] = useState<string | null>(null);
   const [shippedFilter, setShippedFilter] = useState<'all' | 'shipped' | 'unshipped'>('all');
+
+  // Shipping & Packaging pick list state
+  const [pickedItems, setPickedItems] = useState<Record<string, boolean>>({});
+
+  const shippingGroups = useMemo(() => {
+    const groups: Record<string, {
+      customerIG: string;
+      customerName: string;
+      custProfile?: Customer;
+      readyItems: Array<{ orderId: string; item: CoItem }>;
+      waitingItems: Array<{ orderId: string; item: CoItem }>;
+      shippedItems: Array<{ orderId: string; item: CoItem }>;
+      orders: ClientOrder[];
+      hasReady: boolean;
+      isFullyReady: boolean;
+    }> = {};
+
+    cos.forEach(c => {
+      if (c.isShipped) return; // Ignore already fully shipped orders completely
+
+      const igKey = (c.customerIG || '未知顧客').trim().toLowerCase();
+      if (!groups[igKey]) {
+        const custProfile = customers.find(x => x.customerIG?.toLowerCase() === igKey);
+        groups[igKey] = {
+          customerIG: c.customerIG || '未知顧客',
+          customerName: c.customerName || custProfile?.name || '',
+          custProfile,
+          readyItems: [],
+          waitingItems: [],
+          shippedItems: [],
+          orders: [],
+          hasReady: false,
+          isFullyReady: false
+        };
+      }
+      
+      const group = groups[igKey];
+      if (!group.orders.some(o => o.id === c.id)) {
+        group.orders.push(c);
+      }
+
+      c.items?.forEach(item => {
+        if (item.status === 'arrived') {
+          group.readyItems.push({ orderId: c.id, item });
+        } else if (item.status === 'sent_to_client') {
+          group.shippedItems.push({ orderId: c.id, item });
+        } else {
+          group.waitingItems.push({ orderId: c.id, item });
+        }
+      });
+    });
+
+    return Object.values(groups).map(g => {
+      const hasReady = g.readyItems.length > 0;
+      const isFullyReady = hasReady && g.waitingItems.length === 0;
+      return {
+        ...g,
+        hasReady,
+        isFullyReady,
+      };
+    }).sort((a, b) => {
+      if (a.hasReady !== b.hasReady) {
+        return a.hasReady ? -1 : 1;
+      }
+      if (a.isFullyReady !== b.isFullyReady) {
+        return a.isFullyReady ? -1 : 1;
+      }
+      return a.customerIG.localeCompare(b.customerIG);
+    });
+  }, [cos, customers]);
+
+  const filteredShippingGroups = useMemo(() => {
+    if (!search) return shippingGroups;
+    const q = search.toLowerCase();
+    return shippingGroups.filter(g => 
+      g.customerIG.toLowerCase().includes(q) ||
+      (g.customerName || '').toLowerCase().includes(q) ||
+      g.readyItems.some(ri => 
+        [ri.item.series, ri.item.spec, ri.item.character].filter(Boolean).join(' ').toLowerCase().includes(q)
+      ) ||
+      g.waitingItems.some(wi => 
+        [wi.item.series, wi.item.spec, wi.item.character].filter(Boolean).join(' ').toLowerCase().includes(q)
+      )
+    );
+  }, [shippingGroups, search]);
 
   // Filtering for Client Orders
   const filteredOrders = useMemo(() => {
@@ -698,6 +787,22 @@ export default function ClientOrdersView({
           <span>👥 顧客主檔與 VIP 標籤</span>
           <span className="bg-black/10 text-[9px] px-2 py-0.5 rounded-full font-mono font-extrabold">
             {customerStats.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => { setSubTab('shipping'); setSearch(''); }}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-xl transition-all select-none cursor-pointer ${
+            subTab === 'shipping'
+              ? 'bg-amber-600 text-white shadow-xs font-extrabold animate-pulse'
+              : 'text-amber-800 bg-amber-550/10 hover:bg-amber-100/50 border border-amber-300/30'
+          }`}
+          id="btn-subtab-shipping"
+        >
+          <Truck className="w-4 h-4 text-amber-600" />
+          <span>🚚 待出貨包裝助手</span>
+          <span className="bg-amber-800/10 text-amber-900 text-[9px] font-bold px-2 py-0.5 rounded-full font-mono">
+            {shippingGroups.filter(g => g.hasReady).length} 戶可包貨
           </span>
         </button>
       </div>
@@ -1804,6 +1909,385 @@ export default function ClientOrdersView({
 
           </div>
 
+        </div>
+      )}
+
+
+      {/* ──────────────────────────────────────────────────
+          SUB-TAB D: SHIPPING & PACKAGING FULFILLMENT HELPER VIEW
+          ────────────────────────────────────────────────── */}
+      {subTab === 'shipping' && (
+        <div className="space-y-6 animate-in fade-in duration-150">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h1 className="font-serif font-black text-2xl text-gray-900 tracking-tight flex items-center gap-2">
+                <Truck className="w-6 h-6 text-amber-600 animate-bounce" />
+                待出貨商品對單與包裝助手
+              </h1>
+              <p className="text-gray-500 text-[11px] mt-1">
+                本面板自動依顧客彙整跨訂單中<b>「已到貨」</b>之品項，利於實體打包、勾選對貨，並可一鍵整單批量標記寄交！
+              </p>
+            </div>
+            
+            <div className="bg-[#ede8de]/50 px-3.5 py-2 border border-[#BEB8AE] rounded-xl self-start md:self-auto shrink-0 flex items-center gap-1.5 text-[10px] text-gray-600 font-bold">
+              <AlertCircle className="w-4 h-4 text-amber-600" />
+              <span>注意：狀態為「已出貨 (sent_to_client)」及已出貨之歷史貨夾不會出現在此處。</span>
+            </div>
+          </div>
+
+          {/* SEARCH FIELD */}
+          <div className="relative max-w-md">
+            <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-gray-400">
+              <Search className="w-4.5 h-4.5" />
+            </span>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜尋買家 IG 帳號、顧客姓名或已到貨商品名稱..."
+              className="w-full pl-10 pr-4 h-12 border border-[#BEB8AE] focus:border-[#3A72A0] focus:ring-1 focus:ring-[#3A72A0]/20 bg-white rounded-xl text-xs transition-all outline-none"
+            />
+          </div>
+
+          {/* DASHBOARD SUMMARY STATISTICS */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-white border-2 border-[#1E1E1E] p-4.5 rounded-2xl shadow-xs">
+              <div className="text-[10px] text-gray-400 uppercase tracking-widest font-mono font-extrabold">待包裝出貨客群</div>
+              <div className="text-2xl font-serif font-black text-gray-900 mt-1.5">
+                {shippingGroups.filter(g => g.hasReady).length} 戶
+              </div>
+              <div className="text-[10px] text-[#3A72A0] mt-1.5 font-sans font-medium">
+                店內有已到貨實體商品待交寄的顧客數
+              </div>
+            </div>
+
+            <div className="bg-[#ECFDF5] border-2 border-emerald-800 p-4.5 rounded-2xl shadow-xs">
+              <div className="text-[10px] text-emerald-800 uppercase tracking-widest font-mono font-extrabold">商品全到齊客戶</div>
+              <div className="text-2xl font-serif font-black text-emerald-900 mt-1.5">
+                {shippingGroups.filter(g => g.isFullyReady).length} 戶
+              </div>
+              <div className="text-[10px] text-emerald-700 mt-1.5 font-sans font-bold flex items-center gap-1">
+                <span>✨ 跨單追加單品皆到齊，可整包寄出！</span>
+              </div>
+            </div>
+
+            <div className="bg-white border-2 border-[#1E1E1E] p-4.5 rounded-2xl shadow-xs">
+              <div className="text-[10px] text-gray-400 uppercase tracking-widest font-mono font-extrabold">待打包實體單品總額</div>
+              <div className="text-2xl font-serif font-black text-[#3A72A0] mt-1.5">
+                {shippingGroups.reduce((acc, g) => acc + g.readyItems.reduce((sum, r) => sum + (r.item.qty || 1), 0), 0)} 件
+              </div>
+              <div className="text-[10px] text-gray-500 mt-1.5 font-sans font-medium">
+                倉庫在店現貨正等待裝箱出貨之件數
+              </div>
+            </div>
+          </div>
+
+          {/* SHIPPING CUSTOMER GROUPED LIST */}
+          <div className="space-y-6">
+            {filteredShippingGroups.length === 0 ? (
+              <div className="text-center py-16 bg-white border border-[#BEB8AE] rounded-3xl">
+                <div className="text-3xl mb-3">📦</div>
+                <p className="text-gray-500 text-xs font-semibold">目前無符合包貨與關鍵字條件之待出貨買家</p>
+              </div>
+            ) : (
+              filteredShippingGroups.map((g) => {
+                const totalReadySum = g.readyItems.reduce((sum, ri) => {
+                  return sum + (parseFloat(ri.item.price) * (ri.item.qty || 1) || 0);
+                }, 0);
+
+                const contactPhone = g.custProfile?.phone;
+                const shippingAddressNotes = g.custProfile?.notes || g.orders.map(o => o.notes).filter(Boolean).join(' / ');
+                const vipLevel = g.custProfile?.vipLevel;
+
+                return (
+                  <div
+                    key={g.customerIG}
+                    className={`border-2 rounded-3xl overflow-hidden transition-all bg-white shadow-xs ${
+                      g.isFullyReady
+                        ? 'border-emerald-600 ring-2 ring-emerald-500/15'
+                        : g.hasReady
+                        ? 'border-[#3A72A0] hover:border-blue-600'
+                        : 'border-[#BEB8AE]/60 opacity-80'
+                    }`}
+                  >
+                    {/* Header bar and Quick customer contacts profile */}
+                    <div className={`p-4 sm:p-5 border-b flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                      g.isFullyReady ? 'bg-emerald-50/40' : 'bg-[#FFFCF7]'
+                    }`}>
+                      <div className="space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[#3A72A0] bg-[#3A72A0]/10 px-3 py-1 rounded-xl text-xs font-black border border-[#3A72A0]/25">
+                            👤 {g.customerName || '未註冊姓名'}
+                          </span>
+                          <span className="text-gray-900 font-extrabold font-mono text-sm">@{g.customerIG}</span>
+                          
+                          {vipLevel === 'VIP' && (
+                            <span className="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-2 py-0.5 rounded border border-amber-300">
+                              🌟 VIP 常客
+                            </span>
+                          )}
+
+                          {g.isFullyReady ? (
+                            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded border border-emerald-300 flex items-center gap-1 shrink-0 animate-pulse">
+                              <Check className="w-3 h-3" />
+                              🎉 全數追加到齊
+                            </span>
+                          ) : g.hasReady ? (
+                            <span className="bg-amber-100 text-amber-850 text-[10px] font-bold px-2 py-0.5 rounded border border-amber-300/80 flex items-center gap-1 shrink-0">
+                              <Clock className="w-3 h-3 text-amber-600" />
+                              ⏳ 部分到齊 (其餘追加中)
+                            </span>
+                          ) : (
+                            <span className="bg-gray-100 text-gray-500 text-[10px] font-medium px-2 py-0.5 rounded border border-gray-200 shrink-0">
+                              ⌛ 等待採購追蹤中
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Additional info contacts */}
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-gray-500 font-mono">
+                          {contactPhone && (
+                            <span className="flex items-center gap-1 shrink-0 font-bold text-gray-700 bg-white border border-[#BEB8AE]/40 px-1.5 py-0.5 rounded-md">
+                              📞 聯絡電話: {contactPhone}
+                            </span>
+                          )}
+                          <span className="flex items-center gap-1 leading-normal text-amber-900 font-sans">
+                            <span className="font-bold text-amber-800">📫 配送與包裝備註：</span>
+                            <span className="underline decoration-dashed decoration-amber-400">
+                              {shippingAddressNotes || '尚無備註或收件地址資料 (可在 👥 顧客主檔 CRM 面板 點選編輯添加。)'}
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* ACTIONS BAR */}
+                      <div className="flex items-center gap-2.5">
+                        {/* Copy slip notification text to clipboard */}
+                        <button
+                          type="button"
+                          id={`btn-copy-packing-slip-${g.customerIG}`}
+                          onClick={() => {
+                            const slipText = `【yuchishopping 到貨與出貨明細通知】\n` +
+                              `親愛的買家 @${g.customerIG} 您好：\n` +
+                              `您託購的多筆代購商品包裹，本次已抵達店內並安排交寄項目如下：\n` +
+                              `────────────────────────────────\n` +
+                              g.readyItems.map((ri, idx) => ` 🎁 [已到貨現貨] ${[ri.item.series, ri.item.spec, ri.item.character].filter(Boolean).join(' · ')} x ${ri.item.qty || 1} 件`).join('\n') +
+                              (g.waitingItems.length > 0 
+                                ? `\n\n ⏳ [追蹤追加中] 尚有 ${g.waitingItems.length} 件追加單品尚未到台灣，將於後續包裹抵台時第一時間為您打包寄出喔！` 
+                                : `\n\n 🎉 恭喜您！您的所有代購品項皆已全數封箱到齊！`) +
+                              `\n────────────────────────────────\n` +
+                              `本次打包出貨之單品合併估價： NTD $${totalReadySum.toLocaleString()} 元\n` +
+                              `收件手續與物流作業均已就緒，感謝您的託購信賴與託付！ 祝福收件愉快！`;
+                            navigator.clipboard.writeText(slipText);
+                            alert(`📋 現貨包裝與出貨通知明細已成功複製到您的剪貼簿！可直接貼在 IG 私訊或 LINE 聊天室中發送給客戶。`);
+                          }}
+                          className="px-3 py-1.5 text-xs font-bold text-gray-700 bg-white hover:bg-gray-50 border border-gray-300 rounded-xl transition-all cursor-pointer select-none active:scale-95 flex items-center gap-1 shrink-0"
+                          title="複製為代購出貨信件/私訊範本，方便直接發送給買家對單"
+                        >
+                          <Copy className="w-3.5 h-3.5 text-[#3A72A0]" />
+                          <span>複製對單通知</span>
+                        </button>
+
+                        {/* Ship all ready items */}
+                        <button
+                          type="button"
+                          id={`btn-ship-group-fulfillment-${g.customerIG}`}
+                          disabled={g.readyItems.length === 0}
+                          onClick={async () => {
+                            if (g.readyItems.length === 0) return;
+                            if (!window.confirm(`確定要將 買家 @${g.customerIG} 之所有已到貨商品 (${g.readyItems.length} 筆) 標記為「已出貨寄交給客人」嗎？\n此舉會批量將這些單品狀態設為「已出貨」，且如果所屬訂單的全部品項皆已出貨完成，該訂單會自動轉為「已出貨完結」關閉。`)) {
+                              return;
+                            }
+                            try {
+                              const updatedOrders = g.orders.map(o => {
+                                const readyForThisOrder = g.readyItems.filter(ri => ri.orderId === o.id);
+                                if (readyForThisOrder.length === 0) return o;
+
+                                const updatedItems = o.items.map(item => {
+                                  if (item.status === 'arrived') {
+                                    return { ...item, status: 'sent_to_client' as const };
+                                  }
+                                  return item;
+                                });
+
+                                const allSent = updatedItems.every(item => item.status === 'sent_to_client');
+                                return {
+                                  ...o,
+                                  items: updatedItems,
+                                  isShipped: allSent ? true : o.isShipped,
+                                  shippedAt: allSent && !o.isShipped ? new Date().toISOString().split('T')[0] : o.shippedAt
+                                };
+                              });
+
+                              if (onSaveCo) {
+                                await onSaveCo(updatedOrders);
+                                alert(`🎉 批量處理成功！買家 @${g.customerIG} 共 ${g.readyItems.length} 件品項與所屬代購對單均已同步存檔更新為「已出貨」狀態！`);
+                              } else {
+                                alert("操作失敗：存檔回呼未準備妥當，請重新整理網頁再試。");
+                              }
+                            } catch (err) {
+                              console.error("Fulfillment shipment action error:", err);
+                              alert("出貨存檔時發生未預期錯誤，請連線檢查。");
+                            }
+                          }}
+                          className={`px-3.5 py-1.5 text-xs font-extrabold rounded-xl transition-all select-none active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer ${
+                            g.readyItems.length > 0
+                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                              : 'bg-gray-100 text-gray-400 border border-gray-250 cursor-not-allowed'
+                          }`}
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>確認一鍵寄出 ({g.readyItems.length})</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Group Items Lists: Ready & Waiting */}
+                    <div className="p-4 bg-gray-50/50 space-y-4">
+                      {/* READY ITEMS LIST */}
+                      <div>
+                        <div className="text-[10px] text-emerald-800 font-extrabold uppercase tracking-wide mb-2 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                          <span>📦 本次包裝對貨清單 (請拿實體商品對照，點選即可打勾勾完成檢核)</span>
+                        </div>
+
+                        {g.readyItems.length === 0 ? (
+                          <div className="p-4 text-center text-xs text-slate-400 italic bg-white border border-gray-200/80 rounded-2xl">
+                            無本批可出貨之現貨單品（所有已到貨商品均已寄出，或尚在採購配送追蹤中）
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 gap-2">
+                            {g.readyItems.map(({ orderId, item }) => {
+                              const key = `${orderId}-${item.id}`;
+                              const isPicked = !!pickedItems[key];
+                              return (
+                                <div
+                                  key={key}
+                                  onClick={() => {
+                                    setPickedItems(prev => ({ ...prev, [key]: !isPicked }));
+                                  }}
+                                  className={`flex items-center justify-between p-3 bg-white border rounded-2xl cursor-pointer select-none transition-all ${
+                                    isPicked
+                                      ? 'border-emerald-500 bg-emerald-50/20 shadow-3xs'
+                                      : 'border-slate-300/70 hover:border-slate-400'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <div className="shrink-0">
+                                      {isPicked ? (
+                                        <CheckSquare className="w-5 h-5 text-emerald-600" />
+                                      ) : (
+                                        <Square className="w-5 h-5 text-gray-300" />
+                                      )}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className={`text-xs font-bold text-gray-900 ${isPicked ? 'line-through text-gray-400 font-normal decoration-emerald-800/60' : ''}`}>
+                                        {[item.series, item.spec, item.character].filter(Boolean).join(' · ')}
+                                      </div>
+                                      <div className="text-[10px] text-gray-400 font-mono mt-1 flex items-center gap-2">
+                                        <span>包裝數量: <strong className="text-gray-700 font-extrabold text-xs">× {item.qty || 1}</strong></span>
+                                        <span>·</span>
+                                        <span>預估價格: <strong className="text-gray-700 font-bold">${parseFloat(item.price).toLocaleString()}</strong></span>
+                                        <span>·</span>
+                                        <span className="text-sky-700 bg-sky-50 px-1 py-0.5 rounded border border-sky-100">來自訂單識別尾號: @{orderId.slice(-4).toUpperCase()}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="shrink-0 flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      id={`btn-fulfill-single-client-order-item-${item.id}`}
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+                                        if (confirm(`確定要單獨將本項「${[item.series, item.character].filter(Boolean).join(' · ')}」設為已出貨寄交嗎？`)) {
+                                          onMarkSent(orderId, item.id);
+                                        }
+                                      }}
+                                      className="px-2.5 py-1 text-[10px] text-[#3A72A0] hover:text-white hover:bg-[#3A72A0] bg-white border border-[#3A72A0]/45 rounded-lg font-extrabold active:scale-95 transition-all cursor-pointer"
+                                      title="不影響同人其餘商品，獨立先標記寄送此細項"
+                                    >
+                                      單項寄交
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* WAITING ITEMS LIST */}
+                      {g.waitingItems.length > 0 && (
+                        <div>
+                          <div className="text-[10px] text-amber-800 font-extrabold uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                            <span>⏳ 追加採購追蹤中、尚未抵台之品項</span>
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-2">
+                            {g.waitingItems.map(({ orderId, item }) => (
+                              <div
+                                key={`${orderId}-${item.id}`}
+                                className="flex items-center justify-between p-3 bg-white border border-gray-200/70 rounded-2xl"
+                              >
+                                <div className="min-w-0">
+                                  <div className="text-[11px] font-medium text-gray-500">
+                                    {[item.series, item.spec, item.character].filter(Boolean).join(' · ') || '常態商品'}
+                                  </div>
+                                  <div className="text-[9px] text-gray-400 font-mono mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                    <span>需求數量: {item.qty || 1}</span>
+                                    <span>·</span>
+                                    <span>
+                                      當前狀態: <strong className="text-amber-800 font-extrabold bg-amber-50 px-1 py-0.2 rounded border border-amber-200">{item.status === 'pending' ? '待海外下單' : '批追加採購中'}</strong>
+                                    </span>
+                                    <span>·</span>
+                                    <span>訂單序號: @{orderId.slice(-4).toUpperCase()}</span>
+                                  </div>
+                                </div>
+
+                                <div className="shrink-0 text-slate-400 text-[10px] italic font-medium font-sans">
+                                  等待海外到貨
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* HISTORICAL DELIVERED ITEMS LIST */}
+                      {g.shippedItems.length > 0 && (
+                        <div>
+                          <details className="text-[11px] text-slate-400 group">
+                            <summary className="cursor-pointer font-bold select-none hover:text-slate-650 flex items-center gap-1.5 rounded-lg bg-white/50 p-2 border border-slate-200 transition-colors">
+                              <span className="text-gray-400 transition-transform group-open:rotate-90">▶</span>
+                              <span>📦 查看本顧客此訂單中，過往已打包寄交的履約歷程項目 ({g.shippedItems.length} 筆)</span>
+                            </summary>
+                            <div className="grid grid-cols-1 gap-1.5 mt-2 pl-3 animate-in fade-in duration-100">
+                              {g.shippedItems.map(({ orderId, item }) => (
+                                <div
+                                  key={`${orderId}-${item.id}`}
+                                  className="flex items-center justify-between p-2.5 bg-slate-100 border border-slate-200 rounded-xl text-[10px]"
+                                >
+                                  <span className="text-slate-450 line-through">
+                                    {[item.series, item.spec, item.character].filter(Boolean).join(' · ')} x {item.qty || 1}
+                                  </span>
+                                  <span className="text-slate-450 font-bold flex items-center gap-1">
+                                    <Check className="w-3 h-3 text-emerald-600" />
+                                    <span>已寄送買家 (單號: @{orderId.slice(-4).toUpperCase()})</span>
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       )}
 
