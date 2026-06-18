@@ -583,9 +583,20 @@ export function PoModal({
   const [custSearch, setCustSearch] = useState('');
   const [form, setForm] = useState<PreOrder>(() => {
     if (po) {
+      const healedLinked = [...(po.linkedItems || [])];
+      cos.forEach(c => {
+        c.items?.forEach(i => {
+          if (i.poId === po.id) {
+            const hasLink = healedLinked.some(hl => hl.itemId === i.id);
+            if (!hasLink) {
+              healedLinked.push({ coId: c.id, itemId: i.id });
+            }
+          }
+        });
+      });
       return { 
         ...po, 
-        linkedItems: [...(po.linkedItems || [])] 
+        linkedItems: healedLinked 
       };
     }
     return {
