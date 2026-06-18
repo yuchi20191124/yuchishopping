@@ -182,9 +182,7 @@ export default function ClientOrdersView({
   /* ═════════════════════════════════════════════════
      ⚡ POINT 1: ONE-CLICK BULK TEXT PARSER ENGINE
      ═════════════════════════════════════════════════ */
-  const [rawText, setRawText] = useState(
-    `@amy_lucky\n吉伊卡哇兔兔 A款 +1 $350\n吉伊卡哇兔兔 B款 +1 $350\n\n@sherry_toy\n蠟筆小新睡衣公仔 x2 $180`
-  );
+  const [rawText, setRawText] = useState('');
   const [parsedDrafts, setParsedDrafts] = useState<any[]>([]);
   const [parserSuccessMsg, setParserSuccessMsg] = useState<string | null>(null);
 
@@ -193,17 +191,57 @@ export default function ClientOrdersView({
     if (!products || products.length === 0) return null;
     let bestProd: Product | null = null;
     let maxScore = 0;
-    const lowerLine = lineText.toLowerCase();
+    const lowerLine = lineText.trim().toLowerCase();
+
+    if (!lowerLine) return null;
 
     products.forEach(p => {
-      const sName = (series.find(s => s.id === p.seriesId)?.name || '').toLowerCase();
-      const cName = (chars.find(c => c.id === p.characterId)?.name || '').toLowerCase();
-      const spec = (p.spec || '').toLowerCase();
+      const sName = (series.find(s => s.id === p.seriesId)?.name || '').trim().toLowerCase();
+      const cName = (chars.find(c => c.id === p.characterId)?.name || '').trim().toLowerCase();
+      const spec = (p.spec || '').trim().toLowerCase();
 
       let score = 0;
-      if (sName && lowerLine.includes(sName)) score += 3;
-      if (cName && lowerLine.includes(cName)) score += 3;
-      if (spec && lowerLine.includes(spec)) score += 2;
+      let matchedAny = false;
+
+      // Exact matches are the gold standard
+      if (spec && lowerLine === spec) {
+        score += 50;
+        matchedAny = true;
+      }
+      if (cName && lowerLine === cName) {
+        score += 50;
+        matchedAny = true;
+      }
+
+      const fullCombo = `${sName}${cName}${spec}`.replace(/\s+/g, '');
+      const cleanLowerLine = lowerLine.replace(/\s+/g, '');
+      if (fullCombo && cleanLowerLine === fullCombo) {
+        score += 80;
+        matchedAny = true;
+      }
+
+      // Partial inclusions weighted by string length to favor precise matches over generic single characters
+      if (sName && lowerLine.includes(sName)) {
+        score += sName.length * 5;
+        matchedAny = true;
+      }
+      if (cName && lowerLine.includes(cName)) {
+        score += cName.length * 5;
+        matchedAny = true;
+      }
+      if (spec && lowerLine.includes(spec)) {
+        score += spec.length * 5;
+        matchedAny = true;
+      }
+
+      // Length-difference penalty to prioritize tighter matched candidates
+      if (matchedAny) {
+        const totalMatLen = (lowerLine.includes(sName) ? sName.length : 0) + 
+                            (lowerLine.includes(cName) ? cName.length : 0) + 
+                            (lowerLine.includes(spec) ? spec.length : 0);
+        const unmatchedCharCount = Math.max(0, lowerLine.length - totalMatLen);
+        score -= unmatchedCharCount * 0.5;
+      }
 
       if (score > maxScore) {
         maxScore = score;
@@ -211,7 +249,7 @@ export default function ClientOrdersView({
       }
     });
 
-    return maxScore >= 2 ? bestProd : null;
+    return maxScore >= 3 ? bestProd : null;
   };
 
   const executeParsing = () => {
