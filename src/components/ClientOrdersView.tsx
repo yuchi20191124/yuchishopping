@@ -134,6 +134,7 @@ export default function ClientOrdersView({
   const duplicateMap = useMemo(() => {
     const map: Record<string, number> = {};
     cos.forEach(c => {
+      if (c.isShipped) return; // Ignore shipped orders for merging/duplicates calculation
       const ig = (c.customerIG || '').trim().toLowerCase();
       if (ig) {
         map[ig] = (map[ig] || 0) + 1;
@@ -852,12 +853,12 @@ export default function ClientOrdersView({
                               )}
                             </h4>
 
-                            {onMergeSelectedOrders && hasDuplicates && unshippedCount >= 2 && (
+                            {onMergeSelectedOrders && !c.isShipped && hasDuplicates && unshippedCount >= 2 && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   const ig = (c.customerIG || '').trim();
-                                  const targets = cos.filter(o => (o.customerIG || '').trim().toLowerCase() === ig.toLowerCase());
+                                  const targets = cos.filter(o => (o.customerIG || '').trim().toLowerCase() === ig.toLowerCase() && !o.isShipped);
                                   const sorted = [...targets].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
                                   setMergeCustomerIG(ig);
                                   setSelectedIds(sorted.map(s => s.id));
@@ -1812,7 +1813,7 @@ export default function ClientOrdersView({
           ────────────────────────────────────────────────── */}
       {mergeCustomerIG && (() => {
         const candidates = cos.filter(
-          o => (o.customerIG || '').trim().toLowerCase() === mergeCustomerIG.trim().toLowerCase()
+          o => (o.customerIG || '').trim().toLowerCase() === mergeCustomerIG.trim().toLowerCase() && !o.isShipped
         );
 
         const handleToggleSelect = (id: string) => {
