@@ -533,7 +533,22 @@ export const StorageService = {
       snap.forEach((docSnap) => {
         items.push(docSnap.data() as Customer);
       });
-      const merged = items.length > 0 ? items : local;
+      
+      // Merge local with cloud: take cloud as source of truth for matching ids,
+      // but preserve any local records that haven't been synchronized to cloud yet.
+      const mergedMap = new Map<string, Customer>();
+      local.forEach((l: Customer) => {
+        if (l && l.id) {
+          mergedMap.set(l.id, l);
+        }
+      });
+      items.forEach((item: Customer) => {
+        if (item && item.id) {
+          mergedMap.set(item.id, item);
+        }
+      });
+      
+      const merged = Array.from(mergedMap.values());
       saveLocal("of_customers", merged);
       return merged;
     } catch (e) {
