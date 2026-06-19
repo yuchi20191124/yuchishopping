@@ -34,7 +34,8 @@ import {
   Truck,
   Copy,
   ExternalLink,
-  AlertCircle
+  AlertCircle,
+  Download
 } from 'lucide-react';
 import { ClientOrder, PreOrder, CoItem, Customer, Product, Character, Series, WishItem } from '../types';
 
@@ -267,6 +268,67 @@ export default function ClientOrdersView({
          (shippedFilter === 'unshipped' && !c.isShipped))
     ).sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
   }, [cos, search, shippedFilter]);
+
+  // Export to Excel / CSV format (Traditional Chinese Excel safe with UTF-8 BOM)
+  const handleExportToExcel = () => {
+    if (filteredOrders.length === 0) {
+      alert("目前沒有符合篩選條件的訂單可以匯出！");
+      return;
+    }
+
+    const escapeCsv = (str: string) => {
+      const escaped = str.replace(/"/g, '""');
+      return `"${escaped}"`;
+    };
+
+    // Columns requested: 日期/IG帳號/商品/數量/價格
+    const rows = [
+      ["日期", "IG帳號", "商品", "數量", "價格"]
+    ];
+
+    // Sort orders by date from oldest to newest (由舊到新排序)
+    const sortedOrdersForExport = [...filteredOrders].sort((a, b) => {
+      const timeA = new Date(a.createdAt || '').getTime();
+      const timeB = new Date(b.createdAt || '').getTime();
+      return timeA - timeB;
+    });
+
+    sortedOrdersForExport.forEach(order => {
+      const dateStr = order.createdAt ? order.createdAt.split('T')[0] : '';
+      const igAccount = order.customerIG || '未填寫';
+
+      (order.items || []).forEach(item => {
+        const specPart = (item.spec || '').trim();
+        const charPart = (item.character || '').trim();
+        const itemDesc = `${specPart}${charPart}`.trim() || '常態代購品項';
+
+        const qty = item.qty || 1;
+        const price = parseFloat(item.price) || 0;
+
+        rows.push([
+          dateStr,
+          igAccount,
+          itemDesc,
+          qty.toString(),
+          price.toString()
+        ]);
+      });
+    });
+
+    // Add UTF-8 BOM to prevent Traditional Chinese text from being garbled in Excel
+    const csvContent = "\uFEFF" + rows.map(row => row.map(cell => escapeCsv(cell)).join(",")).join("\n");
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+
+    const fileDateStr = new Date().toISOString().split('T')[0];
+    link.setAttribute("download", `yuchishopping_訂單明細_${fileDateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
 
   /* ═════════════════════════════════════════════════
@@ -862,42 +924,55 @@ export default function ClientOrdersView({
               />
             </div>
 
-            {/* Shipped / Unshipped Filter Buttons */}
-            <div className="flex bg-[#ede8de]/50 p-1 border-2 border-[#1E1E1E] rounded-xl self-start md:self-auto shrink-0 divide-x divide-gray-200">
+            {/* Shipped / Unshipped Filter Buttons & Excel Export */}
+            <div className="flex flex-wrap items-center gap-2.5 self-start md:self-auto">
+              <div className="flex bg-[#ede8de]/50 p-1 border-2 border-[#1E1E1E] rounded-xl shrink-0 divide-x divide-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setShippedFilter('all')}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    shippedFilter === 'all'
+                      ? 'bg-[#3A72A0] text-white shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900 bg-transparent'
+                  }`}
+                >
+                  全部代購 ({cos.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShippedFilter('unshipped')}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    shippedFilter === 'unshipped'
+                      ? 'bg-amber-600 text-white shadow-sm'
+                      : 'text-gray-650 hover:text-gray-950 bg-transparent'
+                  }`}
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>待出貨 ({cos.filter(o => !o.isShipped).length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShippedFilter('shipped')}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    shippedFilter === 'shipped'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-gray-650 hover:text-indigo-950 bg-transparent'
+                  }`}
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>已出貨 ({cos.filter(o => o.isShipped).length})</span>
+                </button>
+              </div>
+
               <button
                 type="button"
-                onClick={() => setShippedFilter('all')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                  shippedFilter === 'all'
-                    ? 'bg-[#3A72A0] text-white shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900 bg-transparent'
-                }`}
+                onClick={handleExportToExcel}
+                className="flex items-center justify-center gap-1.5 px-3.5 h-10.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-black rounded-xl cursor-pointer shadow-xs select-none transition-all border-2 border-[#1E1E1E]"
+                id="btn-export-excel"
+                title="將目前篩選顯示的所有訂單品項，匯出成 Excel 可讀取的 CSV 檔案"
               >
-                全部代購 ({cos.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setShippedFilter('unshipped')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  shippedFilter === 'unshipped'
-                    ? 'bg-amber-600 text-white shadow-sm'
-                    : 'text-gray-650 hover:text-gray-950 bg-transparent'
-                }`}
-              >
-                <Clock className="w-3.5 h-3.5" />
-                <span>待出貨 ({cos.filter(o => !o.isShipped).length})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setShippedFilter('shipped')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  shippedFilter === 'shipped'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-gray-650 hover:text-indigo-950 bg-transparent'
-                }`}
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>已出貨 ({cos.filter(o => o.isShipped).length})</span>
+                <Download className="w-4 h-4 text-white" />
+                <span>匯出 Excel ({filteredOrders.length} 筆)</span>
               </button>
             </div>
           </div>
