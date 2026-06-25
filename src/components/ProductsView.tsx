@@ -408,6 +408,32 @@ function ProductsEditor({ chars, series, products, onSave, expandProduct }: Prod
 
   const [collapsedSeries, setCollapsedSeries] = useState<Record<string, boolean>>({});
 
+  // Inline price edit states
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [editingPrice, setEditingPrice] = useState<string>('');
+
+  const startEditPrice = (productId: string, currentPrice: string) => {
+    setEditingProductId(productId);
+    setEditingPrice(currentPrice);
+  };
+
+  const cancelEditPrice = () => {
+    setEditingProductId(null);
+    setEditingPrice('');
+  };
+
+  const handleSavePrice = (productId: string) => {
+    const updated = products.map(p => {
+      if (p.id === productId) {
+        return { ...p, price: editingPrice.trim() };
+      }
+      return p;
+    });
+    onSave(updated);
+    setEditingProductId(null);
+    setEditingPrice('');
+  };
+
   const toggleSeriesCollapse = (sId: string) => {
     setCollapsedSeries(prev => ({
       ...prev,
@@ -786,7 +812,14 @@ function ProductsEditor({ chars, series, products, onSave, expandProduct }: Prod
         </div>
       )}
 
-      {/* PRODUCTS INDEX GRID LIST */}
+      {/* PRODUCTS INDEX GRID LIST WITH REASSURANCE BANNER */}
+      <div className="bg-amber-50/70 border-2 border-amber-200/65 p-3.5 rounded-2xl flex items-start gap-2.5 text-amber-900 text-xs leading-relaxed shadow-xs">
+        <span className="text-amber-600 font-bold shrink-0 text-sm">💡</span>
+        <span>
+          <b>貼心提醒：</b>在此處修改商品規格的「預設售價」，<b>完全不會影響過往已建立的歷史訂單金額</b>。修改後的售價僅會自動套用於此後「全新新增」的訂單上，讓您自由靈活調整價格，免除後顧之憂！
+        </span>
+      </div>
+
       <div className="bg-white border-2 border-[#1E1E1E] rounded-2xl overflow-hidden shadow-sm">
         {filteredProducts.length === 0 ? (
           <div className="p-16 text-center text-gray-300 text-xs">
@@ -857,6 +890,7 @@ function ProductsEditor({ chars, series, products, onSave, expandProduct }: Prod
                       <div className="divide-y divide-gray-100 bg-white">
                         {group.products.map((p) => {
                           const charObj = chars.find(c => c.id === p.characterId);
+                          const isEditingThis = editingProductId === p.id;
                           return (
                             <div key={p.id} className="p-3.5 px-6 flex items-center justify-between gap-4 hover:bg-[#EDE8DE]/10 transition-colors">
                               <div className="min-w-0 pr-2">
@@ -875,21 +909,70 @@ function ProductsEditor({ chars, series, products, onSave, expandProduct }: Prod
                               </div>
 
                               <div className="flex items-center gap-3 shrink-0">
-                                <div className="text-right">
-                                  <span className="text-xs text-gray-400 font-sans block text-[9px] uppercase tracking-wider">預設售價</span>
-                                  <span className="font-sans font-bold text-[#3A72A0] text-sm">
-                                    ${p.price ? parseFloat(p.price).toLocaleString() : '—'}
-                                  </span>
-                                </div>
+                                {isEditingThis ? (
+                                  <div className="flex items-center gap-2 bg-[#EDE8DE]/30 p-1 px-2 rounded-xl border border-[#BEB8AE]/60 animate-fade-in">
+                                    <div className="text-right shrink-0">
+                                      <span className="text-[9px] text-gray-400 font-sans block uppercase tracking-wider font-bold">新售價</span>
+                                      <input
+                                        type="number"
+                                        value={editingPrice}
+                                        onChange={(e) => setEditingPrice(e.target.value)}
+                                        className="w-20 px-2 h-7 border border-[#BEB8AE] focus:border-[#3A72A0] rounded-lg text-xs outline-none bg-white font-sans text-right"
+                                        autoFocus
+                                        placeholder="0"
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') handleSavePrice(p.id);
+                                          if (e.key === 'Escape') cancelEditPrice();
+                                        }}
+                                      />
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSavePrice(p.id)}
+                                      className="p-1 text-emerald-600 hover:bg-emerald-50 rounded-md active:scale-95 transition-all cursor-pointer border border-transparent hover:border-emerald-100 flex items-center justify-center"
+                                      title="儲存售價"
+                                    >
+                                      <Check className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={cancelEditPrice}
+                                      className="p-1 text-gray-500 hover:bg-gray-100 rounded-md active:scale-95 transition-all cursor-pointer flex items-center justify-center font-mono font-bold"
+                                      title="取消"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-2.5">
+                                    <div className="text-right mr-1">
+                                      <span className="text-xs text-gray-400 font-sans block text-[9px] uppercase tracking-wider">預設售價</span>
+                                      <span className="font-sans font-bold text-[#3A72A0] text-sm">
+                                        ${p.price ? parseFloat(p.price).toLocaleString() : '—'}
+                                      </span>
+                                    </div>
 
-                                <button
-                                  onClick={() => handleDeleteProduct(p.id)}
-                                  className="p-2 hover:bg-rose-50 text-rose-500 rounded-lg active:scale-95 transition-all cursor-pointer min-w-[34px] flex items-center justify-center border border-transparent hover:border-rose-100"
-                                  title="刪除此品項"
-                                  id={`btn-delete-product-${p.id}`}
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => startEditPrice(p.id, p.price)}
+                                      className="p-2 hover:bg-sky-50 text-sky-600 rounded-lg active:scale-95 transition-all cursor-pointer min-w-[34px] flex items-center justify-center border border-transparent hover:border-sky-100"
+                                      title="修改此品項預設售價"
+                                      id={`btn-edit-price-${p.id}`}
+                                    >
+                                      <Edit className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteProduct(p.id)}
+                                      className="p-2 hover:bg-rose-50 text-rose-500 rounded-lg active:scale-95 transition-all cursor-pointer min-w-[34px] flex items-center justify-center border border-transparent hover:border-rose-100"
+                                      title="刪除此品項"
+                                      id={`btn-delete-product-${p.id}`}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           );
@@ -906,4 +989,3 @@ function ProductsEditor({ chars, series, products, onSave, expandProduct }: Prod
     </div>
   );
 }
-
