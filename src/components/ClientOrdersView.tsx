@@ -414,14 +414,14 @@ export default function ClientOrdersView({
       if (!trimmed) return;
 
       // 1. Check if the line is purely a standalone user header, e.g. "@amy_lucky" or "amy_lucky:"
-      const standaloneUserMatch = trimmed.match(/^@([a-zA-Z0-9_\u4e00-\u9fa5]+)\s*$/) || trimmed.match(/^([a-zA-Z0-9_\u4e00-\u9fa5]+)\s*[:：]\s*$/);
+      const standaloneUserMatch = trimmed.match(/^@([a-zA-Z0-9_\.\u4e00-\u9fa5]+)\s*$/) || trimmed.match(/^([a-zA-Z0-9_\.\u4e00-\u9fa5]+)\s*[:：]\s*$/);
       if (standaloneUserMatch) {
         currentIG = standaloneUserMatch[1];
         return; // Transition context and move to the next line
       }
 
       // 2. Check if the line contains an inline user handle like "@amy_lucky item info..."
-      const inlineUserMatch = trimmed.match(/@([a-zA-Z0-9_\u4e00-\u9fa5]+)/);
+      const inlineUserMatch = trimmed.match(/@([a-zA-Z0-9_\.\u4e00-\u9fa5]+)/);
       let restOfLine = trimmed;
       if (inlineUserMatch) {
         currentIG = inlineUserMatch[1];
