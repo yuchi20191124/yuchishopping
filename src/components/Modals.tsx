@@ -844,6 +844,49 @@ export function ShipModal({
     ships.filter(s => s.id !== (ship ? ship.id : '')).flatMap(s => s.poIds || [])
   );
 
+  const [poSearch, setPoSearch] = useState('');
+
+  const filteredPos = React.useMemo(() => {
+    const q = poSearch.trim().toLowerCase();
+    if (!q) return pos;
+    return pos.filter(poItem => {
+      // 1) Match pre-order name / order number
+      if ((poItem.name || '').toLowerCase().includes(q)) return true;
+      
+      // 2) Match any notes inside the pre-order
+      if ((poItem.notes || '').toLowerCase().includes(q)) return true;
+
+      // 3) Match inside linked items
+      const hasLinkedMatch = (poItem.linkedItems || []).some(li => {
+        let clientOrder = cos?.find(c => c.id === li.coId);
+        let item = clientOrder?.items?.find(i => i.id === li.itemId);
+
+        if (!item) {
+          clientOrder = cos?.find(c => c.items?.some(i => i.id === li.itemId));
+          item = clientOrder?.items?.find(i => i.id === li.itemId);
+        }
+
+        if (!clientOrder && !item) return false;
+
+        const customerName = (clientOrder?.customerName || '').toLowerCase();
+        const customerIG = (clientOrder?.customerIG || '').toLowerCase();
+        const itemSeries = (item?.series || '').toLowerCase();
+        const itemSpec = (item?.spec || '').toLowerCase();
+        const itemCharacter = (item?.character || '').toLowerCase();
+
+        return (
+          customerName.includes(q) ||
+          customerIG.includes(q) ||
+          itemSeries.includes(q) ||
+          itemSpec.includes(q) ||
+          itemCharacter.includes(q)
+        );
+      });
+
+      return hasLinkedMatch;
+    });
+  }, [pos, poSearch, cos]);
+
   const handleTogglePoId = (poId: string) => {
     if (boundPoIds.has(poId)) return; // Locked, bound elsewhere
     
@@ -942,13 +985,43 @@ export function ShipModal({
             </p>
           </div>
 
+          {/* Search bar for pairing Pre-orders (採購單) */}
+          {pos.length > 0 && (
+            <div className="relative">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-400">
+                <Search className="w-3.5 h-3.5" />
+              </span>
+              <input
+                type="text"
+                value={poSearch}
+                onChange={(e) => setPoSearch(e.target.value)}
+                placeholder="搜尋採購單號 / 買家IG帳號 / 規格或角色..."
+                className="w-full pl-8.5 pr-14 h-9.5 border border-[#BEB8AE]/75 focus:border-[#3A72A0] rounded-xl text-xs bg-white text-gray-800 outline-none placeholder-gray-400/80 shadow-xs"
+                id="modal-ship-po-search"
+              />
+              {poSearch && (
+                <button
+                  type="button"
+                  onClick={() => setPoSearch('')}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-650 text-[10.5px] font-bold cursor-pointer select-none"
+                >
+                  清除
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="max-h-72 overflow-y-auto space-y-2 pr-1 py-1">
             {pos.length === 0 ? (
               <div className="p-6 text-center text-gray-400">
                 目前全資料庫中，沒有建立任何採購單（預購單）。請先至<b>預購訂單</b>新增。
               </div>
+            ) : filteredPos.length === 0 ? (
+              <div className="p-8 text-center text-gray-400 text-xs">
+                🔍 找不到符合「{poSearch}」的採購單。
+              </div>
             ) : (
-              pos.map(poItem => {
+              filteredPos.map(poItem => {
                 const isChecked = form.poIds.includes(poItem.id);
                 const isLoadedElsewhere = boundPoIds.has(poItem.id);
 
@@ -1104,3 +1177,4 @@ function ModalHeader({ title, onClose }: { title: string; onClose: () => void })
     </div>
   );
 }
+
